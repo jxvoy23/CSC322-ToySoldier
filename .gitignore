@@ -1,0 +1,48 @@
+# ==========================================
+# Firebase Cache & Debug Logs
+# ==========================================
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# ==========================================
+# Python Bytecode, Caches & Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# Operating System Junk
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==========================================
+# Local Secrets & IDE Settings
+# ==========================================
+.env
+.env.local
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==========================================
+# Local Zips / Backups
+# ==========================================
+*.zip
+*.tar.gz

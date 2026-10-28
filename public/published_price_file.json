@@ -1,0 +1,74 @@
+[
+  {
+    "offer_id": "BASE_SKU_GREEN",
+    "product_quantities": {
+      "SKU_GREEN": 1
+    },
+    "total_price": 2.0,
+    "virtual_available": 28,
+    "physical_available": 24,
+    "eligibility": "ALL_CUSTOMERS_ONE_ITEM_LIMIT",
+    "loyalty_program_terms": "ENROLLS_BUYER_IN_SOLDIER_PRIME_NO_EXPIRATION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  },
+  {
+    "offer_id": "BASE_SKU_SILVER",
+    "product_quantities": {
+      "SKU_SILVER": 1
+    },
+    "total_price": 3.0,
+    "virtual_available": 16,
+    "physical_available": 14,
+    "eligibility": "ALL_CUSTOMERS_ONE_ITEM_LIMIT",
+    "loyalty_program_terms": "ENROLLS_BUYER_IN_SOLDIER_PRIME_NO_EXPIRATION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  },
+  {
+    "offer_id": "BASE_SKU_GOLD",
+    "product_quantities": {
+      "SKU_GOLD": 1
+    },
+    "total_price": 5.0,
+    "virtual_available": 7,
+    "physical_available": 6,
+    "eligibility": "ALL_CUSTOMERS_ONE_ITEM_LIMIT",
+    "loyalty_program_terms": "ENROLLS_BUYER_IN_SOLDIER_PRIME_NO_EXPIRATION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  },
+  {
+    "offer_id": "OFFER_CHARITY_MYSTERY_POUCH",
+    "product_quantities": {
+      "SKU_SILVER": 1
+    },
+    "total_price": 3.0,
+    "virtual_available": 0,
+    "physical_available": 12,
+    "eligibility": "PHYSICAL_ONLY_ONE_ITEM_LIMIT_CHARITY_SHOES_FOR_CHILDREN",
+    "loyalty_program_terms": "SOLDIER_PRIME_MEMBERS_GET_TWO_POUCH_PEEK_SELECTION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  },
+  {
+    "offer_id": "PRIME_SKU_SILVER",
+    "product_quantities": {
+      "SKU_SILVER": 1
+    },
+    "total_price": 2.0,
+    "virtual_available": 16,
+    "physical_available": 14,
+    "eligibility": "RETURNING_CUSTOMER_SOLDIER_PRIME_MEMBER_ONE_ITEM_LIMIT",
+    "loyalty_program_terms": "SELLER_FUNDED_1_DOLLAR_DISCOUNT_INCLUDED_IN_PRICE_NO_EXPIRATION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  },
+  {
+    "offer_id": "PRIME_SKU_GOLD",
+    "product_quantities": {
+      "SKU_GOLD": 1
+    },
+    "total_price": 4.0,
+    "virtual_available": 7,
+    "physical_available": 6,
+    "eligibility": "RETURNING_CUSTOMER_SOLDIER_PRIME_MEMBER_ONE_ITEM_LIMIT",
+    "loyalty_program_terms": "SELLER_FUNDED_1_DOLLAR_DISCOUNT_INCLUDED_IN_PRICE_NO_EXPIRATION",
+    "timestamp": "2026-10-26T03:30:14Z"
+  }
+]
