@@ -1,6 +1,6 @@
 /* Optional browser regression checks.
  * Install Playwright and Chromium, then run: node tests/storefront_checks.cjs
- * All non-local requests are blocked. No production Firestore access occurs.
+ * All non-local requests are blocked.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -123,38 +123,16 @@ const server = http.createServer((request, response) => {
       assert.equal(await page.locator('button[data-select="BASE_SKU_GREEN"]').isDisabled(), false);
     });
 
-    await scenario('a Firebase SDK failure does not block the catalog', async page => {
-      await page.goto(base + '/?live');
+    await scenario('catalog download is available without Firestore', async page => {
+      const external = [];
+      page.on('request', request => {
+        if (new URL(request.url()).origin !== base) external.push(request.url());
+      });
+      await page.goto(base);
       await verified(page);
-      await page.waitForFunction(() => document.getElementById('livePingCount').textContent === 'Ticker offline');
-      assert.equal(await page.locator('button[data-select="BASE_SKU_GREEN"]').isDisabled(), false);
+      assert.equal(await page.locator('a[href="published_price_file.json"]').count() > 0, true);
+      assert.deepEqual(external, []);
     });
-
-    await scenario('trade text is escaped and refreshes do not multiply subscriptions', async page => {
-      await page.goto(base + '/?live');
-      await verified(page);
-      await page.waitForFunction(() => document.getElementById('tickerText').textContent.includes('<img'));
-      assert.equal(await page.locator('img[src="x"]').count(), 0);
-      for (let index = 0; index < 3; index++) {
-        await page.click('#retrySync');
-        await page.waitForFunction(() => !document.getElementById('retrySync').disabled);
-      }
-      assert.equal(await page.evaluate(() => window.subscriptionCount), 1);
-    }, page => page.addInitScript(() => {
-      window.subscriptionCount = 0;
-      const database = {collection: () => ({orderBy: () => ({limit: () => ({
-        onSnapshot: callback => {
-          window.subscriptionCount++;
-          queueMicrotask(() => callback({docs: [{data: () => ({
-            seller_id: '<img src="x" onerror="throw 1">', sku_id: 'SKU_SILVER',
-            price_paid: 3, remaining_virtual: 15, market: 'simulated'
-          })}]}));
-          return () => {};
-        }
-      })})})};
-      window.firebase = {apps: [{}], firestore: () => database,
-        app: () => ({firestore: () => database})};
-    }));
 
     await scenario('missing Prime offers are unavailable without affecting Standard', async page => {
       await page.goto(base);

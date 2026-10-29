@@ -1,0 +1,31 @@
+{
+  "interval_seconds": 1800,
+  "request_timeout_seconds": 15,
+  "buyer_results": {
+    "type": "url",
+    "url": "https://buyer-team.example/results/vanguard.json"
+  },
+  "competitors": [
+    {
+      "seller_id": "EXAMPLE_SELLER_A",
+      "url": "https://seller-a.example/published_price_file.json",
+      "format": "price_file",
+      "offer_ids": {
+        "SKU_GREEN": "SELLER_A_STANDARD_GREEN",
+        "SKU_SILVER": "SELLER_A_STANDARD_SILVER"
+      },
+      "unrestricted_eligibility": ["ALL_CUSTOMERS", "ALL_CUSTOMERS_ONE_ITEM_LIMIT"]
+    },
+    {
+      "seller_id": "EXAMPLE_SELLER_B",
+      "url": "https://seller-b.example/products",
+      "format": "html",
+      "items": {
+        "SKU_GREEN": {
+          "price_element_id": "green-price",
+          "virtual_stock_element_id": "green-virtual-stock"
+        }
+      }
+    }
+  ]
+}

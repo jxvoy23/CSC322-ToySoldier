@@ -26,7 +26,7 @@ STRATEGIES = ("dynamic_response", "fixed_price", "fixed_markup")
 
 @contextmanager
 def exclusive_project_lock(root):
-    """Prevent the CLI and listener from concurrently rewriting the same files."""
+    """Prevent two pricing processes from rewriting the same files."""
     with (Path(root) / ".market_listener.lock").open("a+b") as stream:
         acquired = False
         try:
@@ -471,39 +471,22 @@ def main():
     parser.add_argument("--config", type=Path, default=ROOT / "market_config.json")
     parser.add_argument("--replays", action="store_true", help="Write replay inputs without publishing")
     args = parser.parse_args()
+    if not args.replays:
+        parser.error("For catalog updates use: python3 -m automation.run")
     with exclusive_project_lock(args.config.resolve().parent):
         output_root = args.config.resolve().parent
         config, skus, competitors, belief, engine = load_market_config(args.config)
-        checkpoint = read_json(output_root / ".market_state.json", {})
+        checkpoint = read_json(output_root / "data/automation_state.json", {})
         if checkpoint.get("pending_publication") is not None:
-            raise RuntimeError("Resume the listener's pending publication before generating another catalog")
-        if checkpoint.get("round_number", 0) > config["round_number"]:
-            raise ValueError("The configured round is older than the saved listener state")
-        for key, remaining in checkpoint.get("virtual_inventory", {}).items():
+            raise RuntimeError("Resume the pending publication before generating replay inputs")
+        for key, remaining in checkpoint.get("buyer_report", {}).get("remaining_virtual", {}).items():
             if key in skus:
-                skus[key].inventory_virtual = min(skus[key].inventory_virtual, count(remaining, "checkpoint stock"))
-        competitor_map = {f"{canonical_seller(offer.seller_id)}:{offer.sku_id}": asdict(offer)
-                          for offer in competitors}
-        for key, offer in checkpoint.get("competitors", {}).items():
-            if key not in competitor_map:
-                competitor_map[key] = offer
-            else:
-                competitor_map[key]["virtual_available"] = min(
-                    competitor_map[key]["virtual_available"], offer["virtual_available"])
-        competitors = [CompetitorOffer(**offer) for offer in competitor_map.values()
-                       if offer.get("unit_price") is not None]
-        if args.replays:
-            generate_replay_comparison_files(engine, skus, competitors, belief, config["rounds_remaining"],
-                config["physical_pouch_count"], config["round_number"], output_directory=output_root / "replays")
-            print("Replay inputs written to replays/. No purchases were simulated.")
-            return
-        offers, audit = engine.build_daily_catalog(skus, competitors, belief,
-            config["rounds_remaining"], config["physical_pouch_count"], config["round_number"],
-            config.get("strategy_mode", "dynamic_response"), config.get("manual_overrides", {}))
-        export_price_file_and_audit_log(offers, audit,
-            output_root / "public/published_price_file.json", output_root / "decision_audit_log.json",
-            public_history_path=output_root / "public/decision_audit_log.json")
-        print("Catalog generated locally. No hosting deployment was performed.")
+                skus[key].inventory_virtual = count(remaining, "buyer stock")
+        if "competitor_offers" in checkpoint:
+            competitors = [CompetitorOffer(**offer) for offer in checkpoint["competitor_offers"]]
+        generate_replay_comparison_files(engine, skus, competitors, belief, config["rounds_remaining"],
+            config["physical_pouch_count"], config["round_number"], output_directory=output_root / "replays")
+        print("Replay inputs written to replays/. No purchases were simulated.")
 
 
 if __name__ == "__main__":

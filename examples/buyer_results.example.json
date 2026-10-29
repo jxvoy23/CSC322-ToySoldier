@@ -1,0 +1,25 @@
+{
+  "report_id": "EXAMPLE-round-4-results-1",
+  "seller_id": "Vanguard_Garrison",
+  "round": 4,
+  "reported_at": "2026-10-29T12:00:00Z",
+  "remaining_virtual": {
+    "SKU_GREEN": 27,
+    "SKU_SILVER": 15,
+    "SKU_GOLD": 7
+  },
+  "transactions": [
+    {
+      "transaction_id": "EXAMPLE-purchase-1",
+      "offer_id": "BASE_SKU_GREEN",
+      "product_quantities": {"SKU_GREEN": 1},
+      "total_price": 2.0
+    },
+    {
+      "transaction_id": "EXAMPLE-purchase-2",
+      "offer_id": "BASE_SKU_SILVER",
+      "product_quantities": {"SKU_SILVER": 1},
+      "total_price": 3.0
+    }
+  ]
+}

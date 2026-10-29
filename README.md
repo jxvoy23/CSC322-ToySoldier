@@ -1,153 +1,139 @@
 # CSC322 Toy Soldier Market
 
-**Vanguard Garrison · Operation Warm Sole**
+Vanguard Garrison · Operation Warm Sole
 
-Seller storefront, pricing recommendations, and simulated-market notifications for the CSC322 Toy Soldier project.
+The storefront publishes a downloadable price file for the buyer team. Our own Python process reads the buyer team's reported results, checks configured competitor sources, and prepares a revised catalog at a 30-minute interval. Firebase Hosting serves the storefront and price file.
 
-[Storefront](https://toy-soldier-9bf43.web.app/) · [Published offers](https://toy-soldier-9bf43.web.app/published_price_file.json)
+## Project layout
 
-This revision was prepared from repository commit `0c63f015db457873c81ea6ad16ff15230c84c6b2`. It has not been pushed or deployed.
+| Path | Purpose |
+| --- | --- |
+| `public/index.html`, `public/app.js` | Storefront and pickup request. The page reads our published JSON and has no Firestore trade ticker. |
+| `public/published_price_file.json` | Downloadable catalog of offers, prices, eligibility and separate virtual and physical availability. |
+| `public/decision_audit_log.json` | Public history of published price and offer changes. |
+| `market_config.json` | Seller ID, round, physical inventory, starting virtual inventory, strategy and any manual price overrides. |
+| `config/automation.json` | Default source settings. It contains no real competitor sources and therefore will not run until configured. |
+| `automation/sources.py` | Reads buyer results and extracts comparable offers from competitor JSON or HTML. |
+| `automation/run.py` | Runs the pricing cycle, tracks the last report, and optionally deploys to Firebase Hosting. |
+| `pricing_engine.py` | Builds offers, pricing recommendations, decision records and replay inputs. |
+| `examples/` | Illustrative buyer report and source settings. All names, URLs and numbers are examples, not official data. |
+| `data/` | Local buyer data, automation state and detailed audit. Created when needed and ignored by Git. |
+| `firebase.json`, `.firebaserc` | Firebase Hosting configuration and default project. |
+| `tests/` | Offline integration and browser checks. |
 
-## Replace the project files
+The old buyer ping client, Firestore listener and storefront ticker have been removed. Firebase Hosting is still used to serve the site. The buyer does not need to install our Python code.
 
-Copy every supplied file into the matching relative path in your checkout. Keep the `public/` and `tests/` directories. In particular, copy the new `public/app.js` along with the HTML.
+## Before using official results
 
-The configuration preserves the repository's Green/Silver/Gold prices ($2/$3/$5), virtual counts (28/16/7), physical counts (24/14/6), and 12 physical pouches. These are carried-forward repository values, **not a verification of the buyer ledger or physical stock**. Round 4 and five remaining rounds are also carried forward. Check them before an official run. Invented competitor teams have been removed; enter actual published competitor offers.
+1. Confirm the current round, rounds remaining, physical inventory and pouch count in `market_config.json`. Its carried-forward virtual counts are Green 28, Silver 16 and Gold 7; these are not verified against the buyer ledger. Confirm the opening quantities with the buyer team.
+2. Confirm with the instructor and buyer team before enabling Prime in the simulated market. `enable_prime_discount_offers` remains at its previous setting; change it only after agreeing on the rule.
+3. Ask the buyer team where its official results JSON will be published and what fields it will contain. `examples/buyer_results.example.json` is a **proposal**, not an agreed buyer format. If the buyer team chooses another format, adapt `automation/sources.py` to its actual output before enabling the automation.
+4. Obtain the real competitor website or price-file URLs. Identify which unrestricted, single-item offer corresponds to each comparable soldier and which availability number is **virtual** stock.
 
-The pouch is now explicitly `SKU_MYSTERY_POUCH`, with zero virtual availability. Tell the buyer team to skip physical-only offers before validating simulated product choices. All six offer IDs remain unchanged.
+At the daily cutoff, the buyer team saves the offer snapshot it will use for that simulated round. A later site update applies to the next simulated round; it does not change accepted purchases. Physical customers see the current published prices. Follow the instructor's announcement for the cutoff and results release time.
 
-## Quick start
+## Buyer results JSON
 
-Use Python 3.10 or newer. The pricing engine and buyer client require only the standard library. Run commands from the project root:
+The current importer accepts a single seller report like the example in `examples/buyer_results.example.json`:
+
+- `report_id`: a unique ID for this version of the report.
+- `seller_id`: `Vanguard_Garrison` or one of its configured aliases.
+- `round`: the completed or current round, as an integer.
+- `reported_at`: an ISO timestamp with a timezone, for example `2026-10-29T12:00:00Z`.
+- `remaining_virtual`: the buyer ledger's remaining quantities for `SKU_GREEN`, `SKU_SILVER` and `SKU_GOLD`.
+- `transactions`: an array describing purchases. It can be empty or omitted when the buyer provides an opening inventory snapshot.
+
+The transaction list is kept for reconciliation; the automation uses the reported **remaining** inventory directly and does not deduct the transactions again. It counts transactions for the audit but does not independently verify them against the remaining stock. Do not include customer identities in a public results file.
+
+Save the official file locally as `data/buyer_results.json`, or set the buyer source to a stable URL that returns the JSON directly. Replace the file when a newer report is released. A replacement or correction needs a new `report_id` and a later `reported_at`. Older reports and silent stock increases are rejected.
+
+If the instructor authorizes a stock increase or correction, stop the watcher and run one update with a reason. This records the reason in the detailed audit:
 
 ```bash
-python3 pricing_engine.py
+python3 -m automation.run --sources data/sources.json --allow-increase-reason "Instructor-approved inventory correction"
+```
+
+Add the same deployment option used for normal updates if the correction should be deployed. Restart the watcher without the correction option afterwards. Check the buyer ledger and any old `.market_state.json` before approving an increase. An unfinished old listener publication blocks migration until it is reviewed.
+
+## Configure competitor sources
+
+Create your local settings file:
+
+```bash
+mkdir -p data
+cp config/automation.json data/sources.json
+```
+
+Open `data/sources.json` in VS Code. It starts with an empty `competitors` list. Use `examples/automation.example.json` as a guide and replace every example with a real source and the matching identifiers. Keep secret URLs and credentials out of Git; `data/` is ignored. The normal source settings are:
+
+- `interval_seconds`: `1800` for 30 minutes.
+- `request_timeout_seconds`: how long each fetch may take.
+- `buyer_results`: either `{"type": "file", "path": "data/buyer_results.json"}` or `{"type": "url", "url": "https://..."}`.
+- `competitors`: one entry per seller to check. Every configured source must succeed for the cycle to publish.
+
+A `price_file` source downloads a seller's JSON, either an array of offers or an object containing an `offers` array. Set `offer_ids` to map each of **our** SKUs to the seller's corresponding offer ID. Mapped offers must contain a single product with quantity 1, `total_price`, integer `virtual_available`, `eligibility`, and a timezone-aware `timestamp`, `effective_at` or `effective_time`. If `expires_at` or `expiration_time` is supplied, it must also be an ISO timestamp and must not be expired. Future offers are rejected. Use `unrestricted_eligibility` to list the exact eligibility strings that mean the offer is available to everyone. Do not map a loyalty or bundle offer as a standard single-item offer.
+
+An `html` source downloads the page's initial HTML and uses the configured element IDs for the price and virtual stock. For an attribute such as `<meta id="green-price" content="2.00">`, add `"price_attribute": "content"`. `virtual_stock_attribute` works the same way. The selected elements must contain an unambiguous dollar amount and a nonnegative stock count. HTML generated only by JavaScript cannot be read by this parser; use the site's public JSON if available, or add a site-specific adapter. Check expiry and eligibility on the seller's site when mapping HTML elements.
+
+The current dynamic strategy considers comparable competitor prices only when their published virtual stock exceeds three units. It also uses our remaining inventory, costs, estimated buyer preferences and sales velocity. A check does not guarantee that a price will change. Do not treat estimated preferences as measured facts.
+
+## Prepare and run an update
+
+Python 3.10 or newer is required. The Python code uses the standard library; there are no pip dependencies. Run from the project root.
+
+After configuring at least one real competitor and obtaining a buyer report, prepare a local update:
+
+```bash
+python3 -m automation.run --sources data/sources.json
+```
+
+This writes the local catalog, public history and `data/` audit. It does not deploy. Open the local storefront:
+
+```bash
 python3 -m http.server 8000 --directory public
 ```
 
-Open [http://localhost:8000](http://localhost:8000). The storefront reads the same JSON that buyers download. It refreshes every 30 seconds while visible. The optional Firestore ticker is disabled on localhost; add `?live` to test it deliberately.
+Visit http://localhost:8000. The storefront refreshes its published file while open; that refresh is separate from the 30-minute pricing cycle.
 
-Generating prices writes local files. It does not deploy Hosting. Pickup requests download to the customer's device; they are not transmitted, confirmed, paid, or reserved.
-
-On Windows, use your installed `python` command in place of `python3`.
-
-## Project files
-
-| File | Role |
-| --- | --- |
-| `market_config.json` | Project ID, active round, stock, buyer estimates, real competitor offers, strategy, and overrides. |
-| `pricing_engine.py` | Validated whole-dollar pricing, discounted loyalty offers, audit/history export, replay inputs, atomic JSON writes, and a single-writer lock. |
-| `buyer_ping_client.py` | Verified-TLS REST notifications for purchases already committed by the buyer program. |
-| `live_market_listener.py` | Current-round feed watcher, persistent stock mirror, batched repricing, recoverable publishing, and optional serial deploys. |
-| `public/index.html` | Existing storefront design, pickup form, and public price-history table. |
-| `public/app.js` | Validates catalogs, handles requests, polls public files, and optionally loads the simulated-trade ticker. |
-| `public/published_price_file.json` | Official downloadable offer snapshot; Standard and Prime reference shared SKU stock. |
-| `public/decision_audit_log.json` | Sanitized public price and eligibility history, including withdrawals. |
-| `decision_audit_log.json` | Detailed decision records, including the original historical records previously stored in both audit files. |
-| `firebase.json`, `.firebaserc` | Hosting directory, cache headers, and Firebase project selection. |
-| `requirements.txt` | Tested Firestore Python SDK version; needed only for the listener. |
-| `package.json`, `package-lock.json` | Optional JavaScript syntax check. The unused npm Firebase dependency has been removed. |
-| `tests/` | Offline Python regressions and optional browser scenarios. |
-
-The runtime creates `.market_state.json` and `.market_listener.lock`. They are ignored by Git. Do not reset the checkpoint during normal operation.
-
-Detailed audits are excluded from the **hosted folder**, but a root-level file tracked in a public GitHub repository is still public on GitHub. Keeping records outside `public/` is not a GitHub access control.
-
-## Configure pricing
-
-Edit `market_config.json` instead of editing duplicate inventories inside Python files.
-
-- `inventory_virtual` mirrors the buyer team's authoritative ledger.
-- `inventory_physical` counts individually available, unpackaged soldiers. `physical_pouch_count` counts a separate sealed pool; do not count the same physical figure in both.
-- `recent_sales_velocity` and `bot_belief` are estimates. Replace the carried-forward examples with supported observations.
-- `competitor_offers` accepts objects with `seller_id`, `sku_id`, `unit_price`, and `virtual_available`. Use public standard single-unit prices. The listener does not treat a competitor's Prime sale price as its standard price.
-- `strategy_mode` is `dynamic_response`, `fixed_price`, or `fixed_markup`.
-- `manual_overrides` maps an offer ID to `[whole_dollar_price, "reason written before results"]`. Unknown IDs, missing reasons, below-cost prices, and invalid numbers are rejected.
-- Set `enable_prime_discount_offers` to false if simulated loyalty has not been approved. The instructor and buyer team must approve support before using it in scored rounds.
-
-Prices remain whole dollars from $1 to $5. Prime prices follow their base price, stay above assigned cost, and publish the actual discount amount. The pouch follows Silver unless explicitly overridden. The ad calculation is an expected-margin bid limit using assumed reach and conversion; it is not an auction winner or guaranteed return.
-
-The EWMA tracker expects mutually exclusive Standard Green, Standard Silver, Standard Gold, and Prime sale counts. Do not count Prime sales again in the Standard totals.
-
-## Buyer integration
-
-Call only after the buyer ledger commits the purchase and its budget and inventory changes:
-
-```python
-from buyer_ping_client import BuyerMarketBroadcaster
-
-broadcaster = BuyerMarketBroadcaster(
-    timeout_seconds=3.0,
-    # token_provider=get_current_buyer_token,  # If your Firebase authorization requires it.
-)
-
-sent = broadcaster.ping_trade(
-    round_number=4,
-    seller_id="Vanguard_Garrison",
-    sku_id="SKU_SILVER",
-    offer_id="BASE_SKU_SILVER",
-    price_paid=3.0,
-    remaining_virtual=15,
-    transaction_id="round-4-committed-purchase-0001",
-    occurred_at="2026-10-29T10:00:00Z",
-    is_test_replay=True,  # Skips all network calls. Use False for an official purchase.
-)
-```
-
-This sample is intentionally a replay notification. Use actual accepted values and `is_test_replay=False` in production. A `False` result means skipped or not confirmed; retain a failed official notification for retry without repeating the purchase.
-
-Reuse the transaction ID and accepted values on retry. Repeated notifications use a deterministic Firestore document ID. If that ID already exists, the client verifies the business fields before reporting success. Invalid trade inputs raise `ValueError` before a request is sent. Omitting the transaction ID remains compatible with the old call signature, but a stable ledger ID is preferred.
-
-The legacy core fields remain `round`, `seller_id`, `sku_id`, `offer_id`, `price_paid`, `remaining_virtual`, and `timestamp`. New writes also include `market: "simulated"`, `quantity: 1`, and `event_id`. Update any restrictive field allowlist in your existing Firestore rules to match. Rules/IAM must authorize the buyer; do not open unrestricted writes just to make a notification succeed.
-
-A token provider can return a refreshed Firebase ID token or authorized Google OAuth access token. See [Firestore REST authentication](https://firebase.google.com/docs/firestore/use-rest-api). TLS verification is always enabled; certificate errors no longer trigger an insecure retry.
-
-## Run the listener
-
-Install its dependency:
+To check and deploy automatically to the `optimized-code` Firebase **preview** channel, install and sign in to the Firebase CLI on the computer first, then run:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 live_market_listener.py --credentials serviceAccountKey.json
-```
-
-This command connects to Firestore and updates its catalog mirror and local JSON files. Hosting deployment is disabled unless you pass `--deploy`. The service-account file must be authorized for the configured project and must stay out of Git and `public/`. Application Default Credentials are also supported.
-
-The listener filters by the configured round, processes notifications on one worker, and normally groups arrivals for two seconds. Same-timestamp sales can still lower stock. Old events, duplicates, and sale notifications that would replenish stock cannot restore inventory. Physical inventory never changes in response to simulated notifications.
-
-Before any publish, the event cursor, stock, offers, and decision ID are saved together. Failed writes/deploys retry the same pending update, including after restart. Decision IDs prevent duplicate audit entries. Corrupt JSON blocks publication instead of silently erasing history. A project lock prevents the pricing CLI and listener from writing concurrently.
-
-To enable actual Hosting deployment after installing and authenticating the Firebase CLI:
-
-```bash
-npm install -g firebase-tools
 firebase login
-python3 live_market_listener.py --credentials serviceAccountKey.json --deploy
+python3 -m automation.run --sources data/sources.json --watch --deploy-preview optimized-code
 ```
 
-Deploys run sequentially with an explicit project ID, checked exit codes, and logged failures. A fixed debounce deadline prevents a busy feed from postponing updates indefinitely. Without `--deploy`, remote static catalogs do not update until you deploy them manually:
+The process runs immediately and then every 30 minutes. Keep the terminal process and computer running, awake and connected to the internet. Press `Ctrl+C` to stop it. Without `--deploy-preview` or `--deploy-live`, the watcher only updates local files.
+
+After the preview is tested and the project is ready for the live site, the corresponding live command is:
 
 ```bash
-firebase deploy --only hosting --project toy-soldier-9bf43
+python3 -m automation.run --sources data/sources.json --watch --deploy-live
 ```
 
-The storefront uses the hosted JSON for prices, not the possibly newer Firestore mirror. The Firestore document is now an object containing `offers`, `catalog_timestamp`, and `decision_id`; update any separate consumers of the old map if needed.
+This deploys to the live Hosting site on every successful cycle. Do not run a preview watcher and a live watcher from the same checkout at the same time. A project lock prevents concurrent pricing processes.
 
-Stop the listener before changing configuration or running the pricing CLI. At the next round, update the active round and remaining rounds. Stock is carried forward. For an instructor-approved restock/correction, reconcile both the config and checkpoint to the buyer ledger while stopped; a sale event alone cannot authorize a stock increase.
+A missing or invalid buyer report, an inaccessible competitor, or an unrecognized offer stops that cycle before a new catalog is prepared. The previous deployed version stays available. A failed deployment keeps a pending update in `data/automation_state.json`; retry with the **same target** and the same prepared catalog will be published without duplicating its audit entry. Subsequent checks can then use newer source data.
 
-The buyer's saved cutoff snapshot still governs that simulated round. Later public updates apply to later simulated rounds and never change an accepted order. Public history timestamps identify when the catalog was prepared, not an independent server-confirmed deployment time.
+## Pricing records and comparison
 
-## Checks and replay inputs
+Detailed decision records are written to `data/decision_audit_log.json`. They include the buyer report identifier and stock, competitor prices and stock, source check times, recommendations, submitted prices and override reasons. The existing root `decision_audit_log.json` is historical; on the first successful new publication it is copied into the local detailed audit if the latter does not exist. It remains visible in GitHub if the repository is public. Ignoring `data/` does not remove information already committed to Git history. The pricing code itself is also visible in a public repository.
+
+For replay inputs after stopping the watcher:
+
+```bash
+python3 pricing_engine.py --replays
+```
+
+The resulting files under `replays/` are candidate price files, not completed simulations. The buyer team must replay each strategy from the same starting state, customer draws and competitor offers. Do not change an official ledger during a replay.
+
+## Verification and operations
 
 ```bash
 python3 -m unittest discover -s tests -v
 npm run check
-python3 pricing_engine.py --replays
 ```
 
-Replay catalogs are written under `replays/` without changing the official published catalog. They are input files, not completed simulations. The buyer must recompute purchases from the same opening state, customer draws, seed, and fixed competitor offers. No replay should alter the official ledger.
-
-Optional browser checks:
+Optional browser checks need Playwright and Chromium:
 
 ```bash
 npm install --no-save --package-lock=false playwright
@@ -155,10 +141,6 @@ npx playwright install chromium
 node tests/storefront_checks.cjs
 ```
 
-These scenarios block all non-local network requests and use mocked trade data. They cover normal loading, invalid catalogs, independent physical/virtual availability, refresh recovery, Firebase failure, safe trade text, subscription reuse, missing Prime offers, mobile overflow, and pickup downloads.
+The project does not process payments, reserve items, or maintain physical sales automatically. A pickup request downloads to the customer's device and must be shown to the seller. Record physical sales and expenses separately and keep physical availability current.
 
-The original visual design is retained. Unsupported hardcoded scarcity and fundraising progress claims were removed. Actual stock reconciliation, instructor approvals, production Security Rules/IAM, Firebase CLI credentials, and a real deployment require the live class environment; offline checks do not validate those.
-
-## Operational boundaries
-
-This is seller-side code. It does not implement the buyer's customer-choice program, a payment processor, a reservation service, or a physical-sales ledger. Record real physical sales, expenses, and cash separately, then update physical availability promptly. Confirm the full price with the customer before accepting an order.
+This change does not alter existing deployed Firestore rules or data. Once the old live site no longer needs the trade feed, review its public `market_feed` and `market_summaries` create permissions and any other Firestore users before closing access. Keep service-account keys private.

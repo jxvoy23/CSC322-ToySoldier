@@ -52,7 +52,7 @@ Thumbs.db
 # ==========================================    
 serviceAccountKey.json
 
-# Dependencies and local listener state
+# Dependencies and local runtime state
 node_modules/
 .venv/
 .market_state.json
@@ -60,3 +60,6 @@ node_modules/
 replays/
 *service-account*.json
 .env.*
+
+# Buyer results, market snapshots, and detailed local decision records
+data/

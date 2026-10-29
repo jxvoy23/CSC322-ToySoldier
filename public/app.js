@@ -28,10 +28,6 @@
   let verified = false;
   let prime = false;
   let refreshing = false;
-  let tickerUnsubscribe = null;
-  let tickerConnecting = false;
-  let tickerGeneration = 0;
-  let sdkPromise = null;
 
   function feedback(message, error = false) {
     text('orderSuccess', message);
@@ -220,76 +216,6 @@
     }
   }
 
-  function loadScript(url) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      const timer = setTimeout(() => { script.remove(); reject(Error('SDK timeout')); }, 5000);
-      script.src = url;
-      script.async = true;
-      script.onload = () => { clearTimeout(timer); resolve(); };
-      script.onerror = () => { clearTimeout(timer); script.remove(); reject(Error('SDK unavailable')); };
-      document.head.append(script);
-    });
-  }
-
-  async function loadFirebase() {
-    if (window.firebase && window.firebase.firestore) return;
-    if (!sdkPromise) {
-      sdkPromise = (async () => {
-        if (!window.firebase) await loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-        if (!window.firebase.firestore) await loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js');
-      })().catch(error => { sdkPromise = null; throw error; });
-    }
-    await sdkPromise;
-  }
-
-  async function initTicker() {
-    if (tickerConnecting || tickerUnsubscribe) return;
-    if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
-        && !new URLSearchParams(location.search).has('live')) {
-      text('tickerText', 'Local preview · Published catalog is available below.');
-      text('livePingCount', 'Live ticker disabled');
-      return;
-    }
-    tickerConnecting = true;
-    const generation = ++tickerGeneration;
-    try {
-      await loadFirebase();
-      if (generation !== tickerGeneration) return;
-      const firebase = window.firebase;
-      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp({
-        apiKey: 'AIzaSyUpWnmxqu2nSwvcTSyTPhZfeWMVFCFB8BA',
-        authDomain: 'toy-soldier-9bf43.firebaseapp.com',
-        projectId: 'toy-soldier-9bf43'
-      });
-      tickerUnsubscribe = app.firestore().collection('market_feed')
-        .orderBy('timestamp', 'desc').limit(1).onSnapshot(snapshot => {
-          if (generation !== tickerGeneration) return;
-          text('livePingCount', 'Simulated feed connected');
-          const latest = snapshot.docs[0];
-          if (!latest) { text('tickerText', 'Simulated market feed · Awaiting official trades.'); return; }
-          const trade = latest.data();
-          if (trade.market && trade.market !== 'simulated') return;
-          if (typeof trade.seller_id !== 'string' || typeof trade.sku_id !== 'string'
-              || !Number.isFinite(trade.price_paid) || !Number.isInteger(trade.remaining_virtual)
-              || trade.remaining_virtual < 0) return;
-          text('tickerText', 'Recent simulated trade · ' + trade.seller_id.slice(0, 200)
-            + ' · ' + trade.sku_id.slice(0, 200) + ' · ' + money(trade.price_paid)
-            + ' · Virtual stock remaining: ' + trade.remaining_virtual);
-        }, () => {
-          if (generation !== tickerGeneration) return;
-          tickerUnsubscribe = null;
-          text('tickerText', 'Simulated activity feed is unavailable. Published prices are shown below.');
-          text('livePingCount', 'Ticker offline');
-        });
-    } catch {
-      text('tickerText', 'Simulated activity feed is unavailable. Published prices are shown below.');
-      text('livePingCount', 'Ticker offline');
-    } finally {
-      tickerConnecting = false;
-    }
-  }
-
   function setMode(value) {
     prime = value;
     const current = el('itemChoice').value;
@@ -315,7 +241,7 @@
     el('reserve').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
     el('itemChoice').focus({preventScroll: true});
   }));
-  el('retrySync').addEventListener('click', () => { void refreshCatalog(); void initTicker(); });
+  el('retrySync').addEventListener('click', () => { void refreshCatalog(); });
   el('orderForm').addEventListener('submit', event => {
     event.preventDefault();
     if (!el('orderForm').reportValidity()) return;
@@ -355,13 +281,7 @@
 
   render();
   void refreshCatalog();
-  void initTicker();
   setInterval(() => { if (!document.hidden) void refreshCatalog(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshCatalog(); });
-  window.addEventListener('pagehide', () => {
-    tickerGeneration++;
-    if (tickerUnsubscribe) tickerUnsubscribe();
-    tickerUnsubscribe = null;
-  });
-  window.addEventListener('pageshow', event => { if (event.persisted) { void refreshCatalog(); void initTicker(); } });
+  window.addEventListener('pageshow', event => { if (event.persisted) void refreshCatalog(); });
 })();
