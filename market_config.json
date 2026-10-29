@@ -1,0 +1,53 @@
+{
+  "project_id": "toy-soldier-9bf43",
+  "seller_id": "Vanguard_Garrison",
+  "seller_aliases": [
+    "Vanguard_Garrison",
+    "Group 5",
+    "Group_5",
+    "Group5",
+    "Team_5"
+  ],
+  "round_number": 4,
+  "rounds_remaining": 5,
+  "strategy_mode": "dynamic_response",
+  "physical_pouch_count": 12,
+  "enable_prime_discount_offers": true,
+  "bot_belief": {
+    "bargain_hunter_share": 0.25,
+    "convenience_shopper_share": 0.25,
+    "collector_share": 0.25,
+    "returning_loyal_share": 0.25
+  },
+  "skus": {
+    "SKU_GREEN": {
+      "sku_id": "SKU_GREEN",
+      "tier": 1,
+      "wholesale_cost": 0.25,
+      "inventory_virtual": 28,
+      "inventory_physical": 24,
+      "recent_sales_velocity": 4,
+      "fixed_price_baseline": 2
+    },
+    "SKU_SILVER": {
+      "sku_id": "SKU_SILVER",
+      "tier": 2,
+      "wholesale_cost": 0.25,
+      "inventory_virtual": 16,
+      "inventory_physical": 14,
+      "recent_sales_velocity": 7,
+      "fixed_price_baseline": 3
+    },
+    "SKU_GOLD": {
+      "sku_id": "SKU_GOLD",
+      "tier": 3,
+      "wholesale_cost": 0.25,
+      "inventory_virtual": 7,
+      "inventory_physical": 6,
+      "recent_sales_velocity": 5,
+      "fixed_price_baseline": 5
+    }
+  },
+  "competitor_offers": [],
+  "manual_overrides": {}
+}

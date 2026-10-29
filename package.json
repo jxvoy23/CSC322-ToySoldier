@@ -1,5 +1,9 @@
 {
-  "dependencies": {
-    "firebase": "^13.1.0"
+  "name": "vanguard-garrison",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static Toy Soldier seller storefront; no frontend build required",
+  "scripts": {
+    "check": "node --check public/app.js"
   }
 }

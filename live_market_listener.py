@@ -1,209 +1,237 @@
-"""
-Live Firestore Market Ticker & Dynamic Repricing Engine
-======================================================
-Listens to incoming trade events from Cloud Firestore in real time.
-Updates inventory, recalculates whole-dollar best responses (including
-Stockout Squeezes), and synchronizes the live UI and published JSON.
+"""Watch official simulated trades and publish coalesced catalog updates.
+
+Run one listener per checkout. --deploy explicitly enables serial Hosting deploys.
+Imports do not initialize credentials, connect to Firestore, or publish anything.
 """
 
-import json
-import time
+import argparse
+import logging
+import queue
 import subprocess
-from datetime import datetime
-from google.cloud import firestore
+import time
+from dataclasses import asdict
+from pathlib import Path
+
+from buyer_ping_client import parse_timestamp, validate_trade
 from pricing_engine import (
-    DualMarketPricingEngine,
-    SKUState,
-    CompetitorOffer,
-    BotPopulationBelief,
+    ROOT, SKU_IDS, CompetitorOffer, atomic_write_json, count,
+    export_price_file_and_audit_log, load_market_config, read_json, exclusive_project_lock,
+    canonical_seller,
 )
 
-PROJECT_ID = "toy-soldier-9bf43"
-db = firestore.Client.from_service_account_json("serviceAccountKey.json")
-
-# 1. Full SKU dictionary (must be a dict of SKUState objects, not { ... })
-my_skus = {
-    "SKU_GREEN": SKUState(
-        sku_id="SKU_GREEN",
-        tier=1,
-        wholesale_cost=0.25,
-        inventory_virtual=28,
-        inventory_physical=24,
-        recent_sales_velocity=4.0,
-        fixed_price_baseline=2.00,
-    ),
-    "SKU_SILVER": SKUState(
-        sku_id="SKU_SILVER",
-        tier=2,
-        wholesale_cost=0.25,
-        inventory_virtual=16,
-        inventory_physical=14,
-        recent_sales_velocity=7.0,
-        fixed_price_baseline=3.00,
-    ),
-    "SKU_GOLD": SKUState(
-        sku_id="SKU_GOLD",
-        tier=3,
-        wholesale_cost=0.25,
-        inventory_virtual=7,
-        inventory_physical=6,
-        recent_sales_velocity=5.0,
-        fixed_price_baseline=5.00,
-    ),
-}
-
-# 2. Competitor state tracking both scraped price and virtual stock
-competitor_state = {
-    "Team_Alpha": {
-        "SKU_GREEN": {"price": 2.00, "stock": 18},
-        "SKU_SILVER": {"price": 3.00, "stock": 10},
-        "SKU_GOLD": {"price": 5.00, "stock": 4},
-    },
-    "Team_Beta": {
-        "SKU_GREEN": {"price": 1.00, "stock": 2},
-        "SKU_SILVER": {"price": 3.00, "stock": 0},
-        "SKU_GOLD": {"price": 5.00, "stock": 0},
-    },
-    "Group_1": {
-        "SKU_GREEN": {"price": 2.00, "stock": 20},
-        "SKU_SILVER": {"price": 3.00, "stock": 15},
-        "SKU_GOLD": {"price": 5.00, "stock": 5},
-    },
-    "Group_2": {
-        "SKU_GREEN": {"price": 2.00, "stock": 18},
-        "SKU_SILVER": {"price": 3.00, "stock": 10},
-        "SKU_GOLD": {"price": 5.00, "stock": 4},
-    },
-    "Group_3": {
-        "SKU_GREEN": {"price": 2.00, "stock": 18},
-        "SKU_SILVER": {"price": 3.00, "stock": 10},
-        "SKU_GOLD": {"price": 5.00, "stock": 4},
-    },
-}
-
-MY_ALIASES = ["Vanguard_Garrison", "Group 5", "Group_5", "Group5", "Team_5"]
-
-engine = DualMarketPricingEngine(
-    min_whole_price=1.00,
-    max_price_cap=5.00,
-    stockout_squeeze_threshold=3,
-)
-bot_belief = BotPopulationBelief()
-
-# Global tracker for chronology and deduplication
-processed_trades = {}
+LOGGER = logging.getLogger(__name__)
 
 
-def on_trade_snapshot(col_snapshot, changes, read_time):
-    deploy_required = False
+class MarketState:
+    """A local stock mirror. The buyer's virtual ledger remains authoritative."""
 
-    for change in changes:
-        if change.type.name == "ADDED":
-            trade = change.document.to_dict()
-            seller = trade.get("seller_id")
-            sku = trade.get("sku_id")
-            price_paid = float(trade.get("price_paid", 2.00))
-            rem = int(trade.get("remaining_virtual", 0))
-            trade_time_str = trade.get("timestamp")
-
-            if not seller or not sku or seller == "NONE":
-                continue
-
-            # 1. Deduplication and Chronology Check
-            trade_key = f"{seller}_{sku}"
-            if trade_time_str:
-                try:
-                    trade_time = datetime.fromisoformat(
-                        trade_time_str.replace("Z", "+00:00")
-                    )
-                    if (
-                        trade_key in processed_trades
-                        and trade_time <= processed_trades[trade_key]
-                    ):
-                        continue
-                    processed_trades[trade_key] = trade_time
-                except Exception:
-                    pass
-
-            print(
-                f"\n[LIVE TICKER] Trade executed: {seller} sold {sku} for ${price_paid:.2f} (Remaining: {rem})"
-            )
-
-            # 2. Update our stock OR update competitor's scraped price & stock
-            if seller in MY_ALIASES and sku in my_skus:
-                my_skus[sku].inventory_virtual = rem
-                deploy_required = True
-            else:
-                if seller not in competitor_state:
-                    competitor_state[seller] = {}
-                competitor_state[seller][sku] = {"price": price_paid, "stock": rem}
-                deploy_required = True
-                if rem <= 3:
-                    print(
-                        f"🔥 [STOCKOUT SQUEEZE DETECTED] {seller} has only {rem} units left of {sku}! Raising prices..."
-                    )
-
-    # 3. Recalculate and auto-deploy
-    if deploy_required:
-        comp_offers = []
-        for s_name, skus_dict in competitor_state.items():
-            for s_id, info in skus_dict.items():
-                if isinstance(info, dict):
-                    p = float(info.get("price", 2.00))
-                    s_qty = int(info.get("stock", 0))
-                else:
-                    p = (
-                        2.00
-                        if s_id == "SKU_GREEN"
-                        else (3.00 if s_id == "SKU_SILVER" else 5.00)
-                    )
-                    s_qty = int(info)
-                comp_offers.append(CompetitorOffer(s_name, s_id, p, s_qty))
-
-        offers, audit = engine.build_daily_catalog(
-            skus=my_skus,
-            competitor_offers=comp_offers,
-            bot_belief=bot_belief,
-            rounds_remaining=5,
-            physical_pouch_count=12,
-            round_number=4,
-            strategy_mode="dynamic_response",
-        )
-
-        # Overwrite local JSON for static scrapers
-        with open("public/published_price_file.json", "w", encoding="utf-8") as f:
-            json.dump([o.__dict__ for o in offers], f, indent=2)
-
-        # Push live state to Firestore for real-time website updates
-        live_doc = {
-            o.offer_id: {
-                "price": o.total_price,
-                "virtual": o.virtual_available,
-                "physical": o.physical_available,
-            }
-            for o in offers
+    def __init__(self, config_path=ROOT / "market_config.json"):
+        self.config_path = Path(config_path).resolve()
+        self.root = self.config_path.parent
+        self.checkpoint_path = self.root / ".market_state.json"
+        self.config, self.skus, competitors, self.belief, self.engine = load_market_config(self.config_path)
+        names = self.config.get("seller_aliases", []) + [self.config["seller_id"]]
+        self.aliases = {canonical_seller(name) for name in names}
+        self.competitors = {
+            f"{canonical_seller(offer.seller_id)}:{offer.sku_id}": asdict(offer)
+            for offer in competitors if canonical_seller(offer.seller_id) not in self.aliases
         }
-        live_doc["last_updated"] = firestore.SERVER_TIMESTAMP
-        db.collection("vanguard_live").document("state").set(live_doc)
+        self.last_events = {}
+        self.pending_publication = None
+        saved = read_json(self.checkpoint_path, {})
+        if not isinstance(saved, dict):
+            raise ValueError("The listener checkpoint must be a JSON object")
+        if saved.get("round_number", 0) > self.config["round_number"]:
+            raise ValueError("The configured round is older than the saved listener state")
+        for sku, remaining in saved.get("virtual_inventory", {}).items():
+            if sku in self.skus:
+                # A notification or a restart cannot replenish simulated stock.
+                self.skus[sku].inventory_virtual = min(
+                    self.skus[sku].inventory_virtual, count(remaining, "checkpoint stock"))
+        for key, offer in saved.get("competitors", {}).items():
+            if key not in self.competitors:
+                self.competitors[key] = offer
+            else:
+                self.competitors[key]["virtual_available"] = min(
+                    self.competitors[key]["virtual_available"], offer["virtual_available"])
+        self.last_events = saved.get("last_events", {})
+        self.pending_publication = saved.get("pending_publication")
+        if self.pending_publication and saved.get("round_number") != self.config["round_number"]:
+            raise ValueError("Finish the pending publication before changing the configured round")
 
-        print(
-            f"✔ Live catalog updated: {[f'{o.offer_id}: ${o.total_price:.2f} (virt: {o.virtual_available})' for o in offers]}"
-        )
+    def save(self):
+        atomic_write_json(self.checkpoint_path, {
+            "version": 1, "round_number": self.config["round_number"],
+            "virtual_inventory": {key: sku.inventory_virtual for key, sku in self.skus.items()},
+            "competitors": self.competitors, "last_events": self.last_events,
+            "pending_publication": self.pending_publication,
+        })
 
-        # Auto-Deploy hosting in background
-        subprocess.Popen(
-            ["firebase", "deploy", "--only", "hosting"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    def apply_trade(self, trade):
+        validate_trade(trade)
+        if trade["round"] != self.config["round_number"]:
+            return False
+        seller = canonical_seller(trade["seller_id"])
+        is_ours = seller in self.aliases
+        sku = trade["sku_id"]
+        key = f"{'self' if is_ours else seller}:{sku}"
+        occurred = parse_timestamp(trade["timestamp"])
+        remaining = trade["remaining_virtual"]
+        previous = self.last_events.get(key)
+        if previous:
+            previous_time = parse_timestamp(previous["timestamp"])
+            if occurred < previous_time or (occurred == previous_time and remaining >= previous["remaining"]):
+                return False
+        competitor_key = f"{seller}:{sku}"
+        old = self.competitors.get(competitor_key)
+        current = self.skus[sku].inventory_virtual if is_ours else (
+            old["virtual_available"] if old is not None else None)
+        if current is not None and remaining > current:
+            LOGGER.warning("Ignored a sale notification that would increase virtual stock")
+            return False
+        if is_ours:
+            self.skus[sku].inventory_virtual = remaining
+        else:
+            # A loyalty sale price is not a competitor's standard published price.
+            price = old.get("unit_price") if old else None
+            if trade["offer_id"] == f"BASE_{sku}":
+                price = trade["price_paid"]
+            self.competitors[competitor_key] = {
+                "seller_id": trade["seller_id"], "sku_id": sku,
+                "unit_price": price, "virtual_available": remaining,
+            }
+        self.last_events[key] = {"timestamp": occurred.isoformat(), "remaining": remaining}
+        return True
+
+    def prepare_publication(self):
+        competitors = [CompetitorOffer(**value) for value in self.competitors.values()
+                       if value.get("unit_price") is not None and value["sku_id"] in SKU_IDS]
+        offers, audit = self.engine.build_daily_catalog(
+            self.skus, competitors, self.belief, self.config["rounds_remaining"],
+            self.config["physical_pouch_count"], self.config["round_number"],
+            self.config.get("strategy_mode", "dynamic_response"),
+            self.config.get("manual_overrides", {}))
+        self.pending_publication = {
+            "offers": [asdict(offer) for offer in offers], "audit": asdict(audit)}
+        # Save the publication alongside the event cursor BEFORE external writes.
+        # A failed write or process restart can replay this same publication safely.
+        self.save()
+
+    def publish_pending(self, database, deployer=None):
+        if self.pending_publication is None:
+            return
+        pending = self.pending_publication
+        export_price_file_and_audit_log(
+            pending["offers"], pending["audit"],
+            self.root / "public/published_price_file.json", self.root / "decision_audit_log.json",
+            public_history_path=self.root / "public/decision_audit_log.json")
+        database.collection("vanguard_live").document("state").set({
+            "offers": pending["offers"], "catalog_timestamp": pending["audit"]["timestamp"],
+            "decision_id": pending["audit"]["decision_id"],
+        })
+        if deployer is not None:
+            deployer()
+        self.pending_publication = None
+        try:
+            self.save()
+        except Exception:
+            self.pending_publication = pending
+            raise
+        LOGGER.info("Published %s offers%s", len(pending["offers"]),
+                    " and deployed Hosting" if deployer else " locally; Hosting deployment disabled")
 
 
-feed_query = db.collection("market_feed")
-watcher = feed_query.on_snapshot(on_trade_snapshot)
+def deploy_hosting(root, project_id):
+    """Synchronous and checked: deployments cannot overlap within the listener."""
+    result = subprocess.run(
+        ["firebase", "deploy", "--only", "hosting", "--project", project_id, "--non-interactive"],
+        cwd=root, capture_output=True, text=True, timeout=180, check=False)
+    if result.returncode:
+        # CLI output is useful to the operator; credentials are never supplied as arguments.
+        raise RuntimeError(f"Hosting deployment failed:\n{result.stderr[-2000:]}\n{result.stdout[-2000:]}")
 
-print("🚀 Vanguard Live Market Listener active. Waiting for trade pings...")
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    watcher.unsubscribe()
+
+def run_listener(state, database, field_filter, *, deploy=False, debounce_seconds=2.0):
+    events = queue.Queue()
+
+    def on_snapshot(_documents, changes, _read_time):
+        # Firestore invokes this callback on a background thread. It does no I/O.
+        for change in changes:
+            if change.type.name == "ADDED":
+                events.put(change.document.to_dict())
+
+    watcher = database.collection("market_feed").where(
+        filter=field_filter("round", "==", state.config["round_number"])).on_snapshot(on_snapshot)
+    deployer = (lambda: deploy_hosting(state.root, state.config["project_id"])) if deploy else None
+    retry_delay = 1.0
+    try:
+        if state.pending_publication is None:
+            state.prepare_publication()
+        while True:
+            if state.pending_publication is not None:
+                try:
+                    state.publish_pending(database, deployer)
+                    retry_delay = 1.0
+                except Exception:
+                    LOGGER.exception("Publication failed; the saved pending update will be retried")
+                    time.sleep(retry_delay)
+                    retry_delay = min(30.0, retry_delay * 2)
+                    continue
+            try:
+                batch = [events.get(timeout=1.0)]
+            except queue.Empty:
+                continue
+            deadline = time.monotonic() + debounce_seconds
+            # A fixed deadline prevents a busy feed from postponing publication forever.
+            while time.monotonic() < deadline:
+                try:
+                    batch.append(events.get(timeout=max(0.001, deadline - time.monotonic())))
+                except queue.Empty:
+                    break
+            changed = False
+            for trade in batch:
+                try:
+                    changed = state.apply_trade(trade) or changed
+                except (ValueError, TypeError, KeyError):
+                    LOGGER.warning("Ignored a malformed market event", exc_info=False)
+            if changed:
+                state.prepare_publication()
+    finally:
+        watcher.unsubscribe()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=ROOT / "market_config.json")
+    parser.add_argument("--credentials", type=Path, help="Service-account JSON; otherwise use Application Default Credentials")
+    parser.add_argument("--deploy", action="store_true", help="Enable actual Firebase Hosting deployment")
+    parser.add_argument("--debounce-seconds", type=float, default=2.0)
+    args = parser.parse_args()
+    if not 0 <= args.debounce_seconds <= 30:
+        parser.error("--debounce-seconds must be between 0 and 30")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        from google.cloud import firestore
+        from google.cloud.firestore_v1.base_query import FieldFilter
+    except ImportError as error:
+        raise SystemExit("Install the listener dependency: python -m pip install -r requirements.txt") from error
+    with exclusive_project_lock(args.config.resolve().parent):
+        state = MarketState(args.config)
+        credentials = args.credentials
+        if credentials is None and (state.root / "serviceAccountKey.json").exists():
+            credentials = state.root / "serviceAccountKey.json"
+        database = (firestore.Client.from_service_account_json(str(credentials), project=state.config["project_id"])
+                    if credentials else firestore.Client(project=state.config["project_id"]))
+        try:
+            LOGGER.info("Listening to simulated round %s. Hosting deployment: %s",
+                        state.config["round_number"], "enabled" if args.deploy else "disabled")
+            run_listener(state, database, FieldFilter, deploy=args.deploy,
+                         debounce_seconds=args.debounce_seconds)
+        except KeyboardInterrupt:
+            LOGGER.info("Listener stopped; the checkpoint is retained")
+        finally:
+            database.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -91,5 +91,260 @@
       "PRIME_SKU_GOLD": 3.75,
       "OFFER_CHARITY_MYSTERY_POUCH": 2.75
     }
+  },
+  {
+    "timestamp": "2026-10-26T03:30:14Z",
+    "round_number": 4,
+    "rounds_remaining": 5,
+    "strategy_mode": "dynamic_response",
+    "bot_belief_state": {
+      "bargain_hunter_share": 0.21,
+      "convenience_shopper_share": 0.284,
+      "collector_share": 0.242,
+      "returning_loyal_share": 0.263
+    },
+    "inputs_snapshot": {
+      "SKU_GREEN": {
+        "sku_id": "SKU_GREEN",
+        "tier": 1,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 28,
+        "inventory_physical": 24,
+        "recent_sales_velocity": 4.0,
+        "fixed_price_baseline": 2.0
+      },
+      "SKU_SILVER": {
+        "sku_id": "SKU_SILVER",
+        "tier": 2,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 16,
+        "inventory_physical": 14,
+        "recent_sales_velocity": 7.0,
+        "fixed_price_baseline": 3.0
+      },
+      "SKU_GOLD": {
+        "sku_id": "SKU_GOLD",
+        "tier": 3,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 7,
+        "inventory_physical": 6,
+        "recent_sales_velocity": 5.0,
+        "fixed_price_baseline": 5.0
+      }
+    },
+    "competitor_snapshot": [
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_GREEN",
+        "unit_price": 2.0,
+        "virtual_available": 18
+      },
+      {
+        "seller_id": "Team_Beta",
+        "sku_id": "SKU_GREEN",
+        "unit_price": 1.0,
+        "virtual_available": 2
+      },
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_SILVER",
+        "unit_price": 3.0,
+        "virtual_available": 10
+      },
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_GOLD",
+        "unit_price": 5.0,
+        "virtual_available": 4
+      }
+    ],
+    "recommended_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0
+    },
+    "submitted_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0
+    },
+    "recommended_ad_bid": 9.61,
+    "manual_overrides": {},
+    "unit_profit_by_offer": {
+      "BASE_SKU_GREEN": 1.75,
+      "BASE_SKU_SILVER": 2.75,
+      "BASE_SKU_GOLD": 4.75,
+      "PRIME_SKU_SILVER": 1.75,
+      "PRIME_SKU_GOLD": 3.75,
+      "OFFER_CHARITY_MYSTERY_POUCH": 2.75
+    }
+  },
+  {
+    "timestamp": "2026-10-29T04:34:20Z",
+    "round_number": 4,
+    "rounds_remaining": 5,
+    "strategy_mode": "dynamic_response",
+    "bot_belief_state": {
+      "bargain_hunter_share": 0.21,
+      "convenience_shopper_share": 0.284,
+      "collector_share": 0.242,
+      "returning_loyal_share": 0.263
+    },
+    "inputs_snapshot": {
+      "SKU_GREEN": {
+        "sku_id": "SKU_GREEN",
+        "tier": 1,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 28,
+        "inventory_physical": 24,
+        "recent_sales_velocity": 4.0,
+        "fixed_price_baseline": 2.0
+      },
+      "SKU_SILVER": {
+        "sku_id": "SKU_SILVER",
+        "tier": 2,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 16,
+        "inventory_physical": 14,
+        "recent_sales_velocity": 7.0,
+        "fixed_price_baseline": 3.0
+      },
+      "SKU_GOLD": {
+        "sku_id": "SKU_GOLD",
+        "tier": 3,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 7,
+        "inventory_physical": 6,
+        "recent_sales_velocity": 5.0,
+        "fixed_price_baseline": 5.0
+      }
+    },
+    "competitor_snapshot": [
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_GREEN",
+        "unit_price": 2.0,
+        "virtual_available": 18
+      },
+      {
+        "seller_id": "Team_Beta",
+        "sku_id": "SKU_GREEN",
+        "unit_price": 1.0,
+        "virtual_available": 2
+      },
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_SILVER",
+        "unit_price": 3.0,
+        "virtual_available": 10
+      },
+      {
+        "seller_id": "Team_Alpha",
+        "sku_id": "SKU_GOLD",
+        "unit_price": 5.0,
+        "virtual_available": 4
+      }
+    ],
+    "recommended_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0
+    },
+    "submitted_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0
+    },
+    "recommended_ad_bid": 9.61,
+    "manual_overrides": {},
+    "unit_profit_by_offer": {
+      "BASE_SKU_GREEN": 1.75,
+      "BASE_SKU_SILVER": 2.75,
+      "BASE_SKU_GOLD": 4.75,
+      "PRIME_SKU_SILVER": 1.75,
+      "PRIME_SKU_GOLD": 3.75,
+      "OFFER_CHARITY_MYSTERY_POUCH": 2.75
+    }
+  },
+  {
+    "timestamp": "2026-10-29T05:11:26.269371Z",
+    "round_number": 4,
+    "rounds_remaining": 5,
+    "strategy_mode": "dynamic_response",
+    "bot_belief_state": {
+      "bargain_hunter_share": 0.25,
+      "convenience_shopper_share": 0.25,
+      "collector_share": 0.25,
+      "returning_loyal_share": 0.25
+    },
+    "inputs_snapshot": {
+      "SKU_GREEN": {
+        "sku_id": "SKU_GREEN",
+        "tier": 1,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 28,
+        "inventory_physical": 24,
+        "recent_sales_velocity": 4,
+        "fixed_price_baseline": 2
+      },
+      "SKU_SILVER": {
+        "sku_id": "SKU_SILVER",
+        "tier": 2,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 16,
+        "inventory_physical": 14,
+        "recent_sales_velocity": 7,
+        "fixed_price_baseline": 3
+      },
+      "SKU_GOLD": {
+        "sku_id": "SKU_GOLD",
+        "tier": 3,
+        "wholesale_cost": 0.25,
+        "inventory_virtual": 7,
+        "inventory_physical": 6,
+        "recent_sales_velocity": 5,
+        "fixed_price_baseline": 5
+      }
+    },
+    "competitor_snapshot": [],
+    "recommended_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0
+    },
+    "submitted_prices": {
+      "BASE_SKU_GREEN": 2.0,
+      "BASE_SKU_SILVER": 3.0,
+      "BASE_SKU_GOLD": 5.0,
+      "OFFER_CHARITY_MYSTERY_POUCH": 3.0,
+      "PRIME_SKU_SILVER": 2.0,
+      "PRIME_SKU_GOLD": 4.0
+    },
+    "recommended_ad_bid": 8.0,
+    "manual_overrides": {},
+    "unit_profit_by_offer": {
+      "BASE_SKU_GREEN": 1.75,
+      "BASE_SKU_SILVER": 2.75,
+      "BASE_SKU_GOLD": 4.75,
+      "OFFER_CHARITY_MYSTERY_POUCH": 2.75,
+      "PRIME_SKU_SILVER": 1.75,
+      "PRIME_SKU_GOLD": 3.75
+    },
+    "decision_id": "7b5c2c6c35f74d46ac9979376359970e"
   }
 ]
