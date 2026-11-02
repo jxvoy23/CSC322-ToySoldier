@@ -56,11 +56,13 @@ def initial_stock(root, config, skus):
 def deploy(root, project_id, target):
     if target == "local":
         return
+    # Node installs npx as a .cmd launcher on Windows.
+    npx = "npx.cmd" if sys.platform == "win32" else "npx"
     if target == "live":
-        command = ["npx", "-y", "firebase-tools@latest", "deploy", "--only", "hosting"]
+        command = [npx, "-y", "firebase-tools@latest", "deploy", "--only", "hosting"]
     elif target.startswith("preview:"):
         channel = target.split(":", 1)[1]
-        command = ["npx", "-y", "firebase-tools@latest", "hosting:channel:deploy", channel]
+        command = [npx, "-y", "firebase-tools@latest", "hosting:channel:deploy", channel]
     else:
         raise ValueError("Invalid deployment target")
     command.extend(["--project", project_id, "--non-interactive"])

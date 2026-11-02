@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timezone
 
 from automation.firebase_inventory import inventory_from_state, public_firebase_state
-from pricing_engine import ROOT, exclusive_project_lock, export_price_file_and_audit_log, load_market_config, number, read_json
+from pricing_engine import ROOT, cent_price, exclusive_project_lock, export_price_file_and_audit_log, load_market_config, read_json
 
 
 def prepare(root=ROOT):
@@ -30,9 +30,9 @@ def prepare(root=ROOT):
         live = state[offer["offer_id"]]
         if not isinstance(live, dict):
             raise ValueError("A Firebase offer has an invalid format")
-        price = number(live.get("price"), "Firebase published price", 1)
-        if price > 5 or not price.is_integer():
-            raise ValueError("Firebase price is outside the whole-dollar $1–$5 range")
+        price = cent_price(live.get("price"), "Firebase published price", 0.25)
+        if price > 5:
+            raise ValueError("Firebase price is outside the $0.25–$5 range")
         offer.update(total_price=price, virtual_available=live["virtual"],
                      physical_available=live["physical"], timestamp=stamp,
                      simulated_stock_status="not_synchronized")

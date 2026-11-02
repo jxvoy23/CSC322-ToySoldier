@@ -60,32 +60,26 @@ const server = http.createServer((request, response) => {
     const unavailable = page => page.waitForFunction(() =>
       document.getElementById('syncStatus').textContent.includes('Catalog unavailable'));
 
-    await scenario('catalog, Prime selection, and complete pickup download', async page => {
+    await scenario('cent prices render while in-person pickup is hidden', async page => {
       await page.goto(base);
       await verified(page);
-      await page.click('#primeMode'); // No selected item: regression for the old null.startsWith crash.
-      await page.click('button[data-select="BASE_SKU_SILVER"]');
-      assert.equal(await page.locator('#itemChoice').inputValue(), 'PRIME_SKU_SILVER');
-      assert.equal(await page.locator('#submitOrder').isDisabled(), true);
-      await page.check('#returningCustomer');
-      await page.fill('#custName', 'Test Buyer');
-      await page.fill('#custEmail', 'test@example.com');
-      await page.selectOption('#pickupLocation', {label: 'Campus Library'});
-      const downloadPromise = page.waitForEvent('download');
-      await page.click('#submitOrder');
-      const download = await downloadPromise;
-      const output = path.join(downloadDirectory, download.suggestedFilename());
-      await download.saveAs(output);
-      const content = fs.readFileSync(output, 'utf8');
-      assert.match(content, /Offer ID: PRIME_SKU_SILVER/);
-      assert.match(content, /Price: \$2\.00/);
-      assert.match(content, /NOT SUBMITTED OR CONFIRMED/);
-      assert.equal(await page.locator('#custEmail').inputValue(), 'test@example.com');
+      assert.equal(await page.locator('#reserve').isHidden(), true);
+      assert.equal(await page.locator('button[data-select="BASE_SKU_SILVER"]').isHidden(), true);
+      assert.equal(await page.locator('#price-BASE_SKU_GREEN').textContent(), '$1.49');
+      await page.click('#primeMode');
+      assert.equal(await page.locator('#price-BASE_SKU_SILVER').textContent(), '$0.99');
       assert.equal(await page.locator('#priceHistoryBody tr').count() > 0, true);
       if (process.env.SCREENSHOT_DIR) {
         fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
         await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, 'storefront-desktop.png'), fullPage: true});
       }
+    }, page => {
+      const rows = clone(catalog);
+      rows.find(row => row.offer_id === 'BASE_SKU_GREEN').total_price = 1.49;
+      rows.find(row => row.offer_id === 'BASE_SKU_SILVER').total_price = 1.99;
+      rows.find(row => row.offer_id === 'PRIME_SKU_SILVER').total_price = 0.99;
+      return page.route('**/published_price_file.json', route => route.fulfill({
+        contentType: 'application/json', body: JSON.stringify(rows)}));
     });
 
     await scenario('invalid catalog cannot enable a pickup request', async page => {
@@ -96,11 +90,22 @@ const server = http.createServer((request, response) => {
     }, page => page.route('**/published_price_file.json', route => route.fulfill({
       contentType: 'application/json', body: JSON.stringify([catalog[0], catalog[0]])})));
 
-    await scenario('physical stock controls pickup independently of virtual stock', async page => {
+    await scenario('sub-cent catalog prices are rejected', async page => {
+      await page.goto(base);
+      await unavailable(page);
+    }, page => {
+      const rows = clone(catalog);
+      rows.find(row => row.offer_id === 'BASE_SKU_GREEN').total_price = 1.234;
+      return page.route('**/published_price_file.json', route => route.fulfill({
+        contentType: 'application/json', body: JSON.stringify(rows)}));
+    });
+
+    await scenario('physical stock remains separate from virtual stock', async page => {
       await page.goto(base);
       await verified(page);
-      assert.equal(await page.locator('button[data-select="BASE_SKU_GREEN"]').isDisabled(), true);
-      assert.equal(await page.locator('button[data-select="BASE_SKU_GOLD"]').isDisabled(), false);
+      assert.match(await page.locator('#phys-BASE_SKU_GREEN').textContent(), /0 units/);
+      assert.match(await page.locator('#virt-BASE_SKU_GOLD').textContent(), /0 units/);
+      assert.equal(await page.locator('#reserve').isHidden(), true);
     }, page => {
       const rows = clone(catalog);
       rows.find(row => row.offer_id === 'BASE_SKU_GREEN').physical_available = 0;

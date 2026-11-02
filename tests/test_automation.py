@@ -23,6 +23,25 @@ OFFERS = [
 ]
 
 
+class DeploymentCommandTests(unittest.TestCase):
+    def test_uses_platform_launcher_for_live_and_preview(self):
+        scenarios = (
+            ("win32", "live", "npx.cmd", "deploy"),
+            ("win32", "preview:review", "npx.cmd", "hosting:channel:deploy"),
+            ("darwin", "live", "npx", "deploy"),
+            ("linux", "preview:review", "npx", "hosting:channel:deploy"),
+        )
+        for platform, target, launcher, action in scenarios:
+            with self.subTest(platform=platform, target=target):
+                with patch.object(runner.sys, "platform", platform), \
+                        patch.object(runner.subprocess, "run") as command:
+                    command.return_value.returncode = 0
+                    runner.deploy(ROOT, "toy-soldier-9bf43", target)
+                    args = command.call_args.args[0]
+                    self.assertEqual(args[:4], [launcher, "-y", "firebase-tools@latest", action])
+                    self.assertEqual(args[-3:], ["--project", "toy-soldier-9bf43", "--non-interactive"])
+
+
 class Handler(BaseHTTPRequestHandler):
     routes = {}
 
@@ -98,7 +117,7 @@ class AutomationTests(unittest.TestCase):
     def test_end_to_end_uses_buyer_stock_and_competitor_prices(self):
         self.cycle()
         offers = {row["offer_id"]: row for row in self.read_json("public/published_price_file.json")}
-        self.assertEqual((offers["BASE_SKU_GREEN"]["total_price"], offers["BASE_SKU_SILVER"]["total_price"]), (1, 2))
+        self.assertEqual((offers["BASE_SKU_GREEN"]["total_price"], offers["BASE_SKU_SILVER"]["total_price"]), (0.99, 1.99))
         self.assertEqual(offers["BASE_SKU_GREEN"]["virtual_available"], 27)
         self.assertEqual(offers["BASE_SKU_SILVER"]["virtual_available"], 15)
         self.assertEqual(offers["PRIME_SKU_SILVER"]["virtual_available"], 15)

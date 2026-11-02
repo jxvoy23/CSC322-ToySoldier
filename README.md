@@ -18,7 +18,7 @@ The three competitor feeds are configured. A scan-only process can check them ev
 
 The older live storefront reads Firestore directly. The optimized storefront reads its published static JSON catalog. Deploying this branch replaces the live Hosting `public/` folder. `python3 -m automation.prepare_live` first reads the current public Firestore state into that catalog without changing the database.
 
-The Firebase state last inspected on November 2 had last been updated October 29. Reconcile its virtual inventory with the buyer team's ledger and count physical inventory; neither the Firebase timestamp nor the values in `market_config.json` prove the counts are current. Confirm the round, remaining rounds, and simulated Prime eligibility with the instructor and buyer team.
+The existing Firebase virtual inventory is the starting stock. The watcher reads the current Firebase counts rather than resetting them from `market_config.json`. Before importing buyer results, reconcile which transactions have already been included and confirm the round, remaining rounds, and simulated Prime eligibility with the instructor and buyer team.
 
 ## How the market works
 
@@ -28,7 +28,7 @@ The Firebase state last inspected on November 2 had last been updated October 29
 4. **We check the market.** Our local automation reads the buyer's report, checks configured competitor sources, and uses those inputs to generate a catalog and decision record.
 5. **We publish updates.** When explicitly configured to deploy, the process sends a successful catalog update to a Firebase Hosting preview or live site.
 
-A price check does not necessarily change a price. The dynamic strategy is a heuristic using inventory, costs, sales estimates, buyer preference estimates, and available competitor offers. It is not a claim that we have found a market equilibrium.
+A price check does not necessarily change a price. The dynamic strategy is a heuristic using inventory, costs, buyer preference estimates, and available competitor offers. Sales-velocity values remain in the configuration but are not currently used to set prices or automatically derived from the buyer ledger. It is not a claim that we have found a market equilibrium.
 
 ## Storefront and buyer handoff
 
@@ -39,7 +39,9 @@ Each offer has a stable `offer_id`, `product_quantities`, `total_price`, `eligib
 - Standard and Prime Silver offers share the same `SKU_SILVER` stock. Standard and Prime Gold offers share the same `SKU_GOLD` stock.
 - Prime prices already include the published discount. Simulated Prime eligibility requires buyer-team support and instructor approval.
 - `OFFER_CHARITY_MYSTERY_POUCH` uses `SKU_MYSTERY_POUCH` and is physical only, with zero virtual availability.
-- A pickup request is downloaded to the customer's device; it is not sent to the seller and does not reserve stock. Confirm the price, pickup, and payment with the customer.
+- In-person pickup is currently unavailable. The pickup form and selection controls are hidden; no alternative physical checkout is implied. Physical inventory remains recorded separately.
+
+Prices are in whole cents. The default minimum is the assigned $0.25 unit cost and the existing maximum is $5. For the dynamic strategy, when a comparable competitor's reported virtual stock meets the configured availability rules, the engine targets one cent below that competitor, subject to the price and product-cost floors. If our heuristic already recommends less, it does not raise the price to match. Unknown or sold-out competitor stock does not qualify. Prime discounts remain seller-funded and are clamped to the same cost floors. Prices can reach cost, leaving zero unit margin.
 
 ## Project files
 
@@ -206,7 +208,7 @@ python3 pricing_engine.py --replays
 
 Run this after stopping the watcher. The files under `replays/` are inputs, not completed simulations. The buyer team must replay them from the same opening state, customer draws, and competitor offers; a replay must not change the official ledger.
 
-Maintain the required simulated transaction records, physical sales, expenses, and inventory records separately. Announce physical selling locations through the class market channel and follow the instructor's reporting rules.
+Maintain the required simulated transaction records, physical sales, expenses, and inventory records separately. If physical selling becomes possible, announce locations through the class market channel and follow the instructor's reporting rules.
 
 ## Checks
 

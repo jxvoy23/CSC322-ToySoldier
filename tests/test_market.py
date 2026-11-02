@@ -5,10 +5,11 @@ import json
 import tempfile
 import unittest
 from dataclasses import asdict
+from decimal import Decimal
 from pathlib import Path
 
 from pricing_engine import (
-    ROOT, BotArchetypeTracker, BotPopulationBelief, DualMarketPricingEngine,
+    ROOT, BotArchetypeTracker, BotPopulationBelief, CompetitorOffer, DualMarketPricingEngine,
     RoundSalesObservation, atomic_write_json, exclusive_project_lock,
     export_price_file_and_audit_log, generate_replay_comparison_files, load_market_config,
 )
@@ -74,7 +75,7 @@ class PricingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.build()
         with self.assertRaises(ValueError):
-            DualMarketPricingEngine(min_whole_price=2.5)
+            DualMarketPricingEngine(min_whole_price=2.555)
         with self.assertRaises(ValueError):
             self.engine.clamp_whole_dollar(2, low=4, high=3)
 
@@ -86,11 +87,41 @@ class PricingTests(unittest.TestCase):
                 offers, audit = self.build(strategy_mode=mode)
                 for offer in offers:
                     self.assertEqual(sum(offer.product_quantities.values()), 1)
-                    self.assertTrue(1 <= offer.total_price <= 5)
-                    self.assertEqual(offer.total_price, int(offer.total_price))
+                    self.assertTrue(0.25 <= offer.total_price <= 5)
+                    self.assertEqual(Decimal(str(offer.total_price)) % Decimal("0.01"), 0)
                     self.assertGreaterEqual(offer.virtual_available, 0)
                 if inventory == 0:
                     self.assertEqual(audit.recommended_ad_bid, 0)
+
+    def test_dynamic_prices_undercut_eligible_offers_by_one_cent(self):
+        competitors = [
+            CompetitorOffer("rival", "SKU_GREEN", 1.50, 10),
+            CompetitorOffer("rival", "SKU_SILVER", 2.00, 10),
+            CompetitorOffer("rival", "SKU_GOLD", 4.00, 10),
+        ]
+        offers, audit = self.build(competitor_offers=competitors)
+        prices = {offer.offer_id: offer.total_price for offer in offers}
+        self.assertEqual((prices["BASE_SKU_GREEN"], prices["BASE_SKU_SILVER"], prices["BASE_SKU_GOLD"]),
+                         (1.49, 1.99, 3.99))
+        self.assertEqual((prices["PRIME_SKU_SILVER"], prices["PRIME_SKU_GOLD"]), (0.99, 2.99))
+        self.assertEqual(audit.recommended_prices["BASE_SKU_GREEN"], 1.49)
+
+    def test_undercut_respects_cost_floor_and_ignores_unavailable_offers(self):
+        competitors = [CompetitorOffer("cheap", "SKU_GREEN", 0.25, 10),
+                       CompetitorOffer("unknown", "SKU_SILVER", 1.00, None, "unknown"),
+                       CompetitorOffer("out", "SKU_GOLD", 1.00, 0)]
+        offers, _ = self.build(competitor_offers=competitors)
+        prices = {offer.offer_id: offer.total_price for offer in offers}
+        self.assertEqual((prices["BASE_SKU_GREEN"], prices["BASE_SKU_SILVER"], prices["BASE_SKU_GOLD"]),
+                         (0.25, 3.0, 5.0))
+
+    def test_cent_rounding_and_override_validation(self):
+        self.assertEqual(self.engine.clamp_cents(1.005), 1.01)
+        self.assertEqual(self.engine.clamp_cents(0.251, low=0.251), 0.26)
+        offers, _ = self.build(manual_overrides={"BASE_SKU_GREEN": [0.99, "Competitive price"]})
+        self.assertEqual(offers[0].total_price, 0.99)
+        with self.assertRaisesRegex(ValueError, "whole cents"):
+            self.build(manual_overrides={"BASE_SKU_GREEN": [1.234, "Invalid sub-cent price"]})
 
     def test_ad_bid_uses_discounted_returning_customer_margin(self):
         prices = {"SKU_GREEN": 2, "SKU_SILVER": 3, "SKU_GOLD": 5}

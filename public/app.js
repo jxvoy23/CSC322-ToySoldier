@@ -68,7 +68,7 @@
         ? offer.physical_available + ' units' + (verified ? '' : ' (last known)')
         : verified ? 'Offer unavailable' : 'Not verified'));
       text('virt-' + product.id, product.sku === 'SKU_MYSTERY_POUCH'
-        ? 'Simulated Virtual Stock: 0 (In-Person Only)'
+        ? 'Simulated Virtual Stock: 0 (Physical Only)'
         : 'Simulated Virtual Stock: ' + (offer
           ? offer.virtual_available + ' units' + (offer.simulated_stock_status !== 'buyer_report'
             ? ' (not synced to buyer sales)' : verified ? '' : ' (last known)')
@@ -119,7 +119,9 @@
       if (result.has(offer.offer_id)) throw Error('Duplicate offer');
       const product = knownProducts.get(offer.offer_id);
       const quantities = offer.product_quantities;
-      if (!Number.isInteger(offer.total_price) || offer.total_price < 1 || offer.total_price > 5
+      if (typeof offer.total_price !== 'number' || !Number.isFinite(offer.total_price)
+          || Math.abs(offer.total_price * 100 - Math.round(offer.total_price * 100)) > 1e-8
+          || offer.total_price < 0.25 || offer.total_price > 5
           || !Number.isInteger(offer.physical_available) || offer.physical_available < 0
           || !Number.isInteger(offer.virtual_available) || offer.virtual_available < 0
           || !quantities || Object.keys(quantities).length !== 1 || quantities[product.sku] !== 1
@@ -211,7 +213,7 @@
     } catch {
       verified = false;
       text('syncStatus', offers.size
-        ? 'Refresh failed · Last known prices shown. Pickup requests are paused.'
+        ? 'Refresh failed · Last known prices shown. Catalog not verified.'
         : 'Catalog unavailable · Reference prices shown. Refresh to verify stock.');
       text('lastUpdated', catalogTime ? new Date(catalogTime).toLocaleString() + ' (last known)' : 'Unverified');
       el('catalogStatus').classList.remove('is-live');
@@ -271,7 +273,7 @@
       'Catalog timestamp: ' + catalogTime, 'Eligibility: ' + offer.eligibility,
       'Prior purchase declared: ' + (el('returningCustomer').checked ? 'Yes' : 'No'),
       'Preferred pickup: ' + el('pickupLocation').value, 'Notes: ' + el('notes').value.trim(), '',
-      'Pay exact whole-dollar cash after the seller confirms. Saving this request does not hold inventory.'
+      'Payment and fulfillment require seller confirmation. Saving this request does not hold inventory.'
     ];
     const url = URL.createObjectURL(new Blob([lines.join('\n')], {type: 'text/plain;charset=utf-8'}));
     const link = document.createElement('a');

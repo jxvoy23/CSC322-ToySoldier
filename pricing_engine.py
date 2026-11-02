@@ -13,13 +13,16 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent
 UNIT_WHOLESALE_COST = 0.25
-MIN_WHOLE_DOLLAR_PRICE = 1.0
+MIN_PRICE = UNIT_WHOLESALE_COST
+MIN_WHOLE_DOLLAR_PRICE = MIN_PRICE  # Legacy constant kept for imports.
 MAX_PRICE_CAP = 5.0
+CENT = Decimal("0.01")
 SKU_IDS = ("SKU_GREEN", "SKU_SILVER", "SKU_GOLD")
 STRATEGIES = ("dynamic_response", "fixed_price", "fixed_markup")
 
@@ -68,6 +71,18 @@ def number(value, name, minimum=0.0):
     if not math.isfinite(value) or value < minimum:
         raise ValueError(f"{name} must be finite and at least {minimum}")
     return float(value)
+
+
+def cent_price(value, name, minimum=0.0):
+    """Validate an explicitly supplied price without silently rounding it."""
+    number(value, name, minimum)
+    amount = Decimal(str(value))
+    try:
+        if amount != amount.quantize(CENT):
+            raise ValueError(f"{name} must be expressed in whole cents")
+    except InvalidOperation as error:
+        raise ValueError(f"{name} is outside the supported price range") from error
+    return float(amount)
 
 
 def count(value, name, minimum=0):
@@ -216,10 +231,10 @@ class DualMarketPricingEngine:
     def __init__(self, min_whole_price=MIN_WHOLE_DOLLAR_PRICE,
                  max_price_cap=MAX_PRICE_CAP, fixed_markup_multiplier=8.0,
                  stockout_squeeze_threshold=3, enable_prime_discount_offers=True):
-        low = number(min_whole_price, "min_whole_price", 1)
-        high = number(max_price_cap, "max_price_cap", 1)
-        if not low.is_integer() or not high.is_integer() or low > high or high > 5:
-            raise ValueError("Whole-dollar bounds must satisfy 1 <= minimum <= maximum <= 5")
+        low = cent_price(min_whole_price, "minimum price", UNIT_WHOLESALE_COST)
+        high = cent_price(max_price_cap, "max_price_cap", UNIT_WHOLESALE_COST)
+        if low > high or high > 5:
+            raise ValueError("Price bounds must satisfy cost <= minimum <= maximum <= 5")
         self.min_whole_price = low
         self.max_price_cap = high
         self.fixed_markup_multiplier = number(fixed_markup_multiplier, "markup")
@@ -228,15 +243,20 @@ class DualMarketPricingEngine:
             raise ValueError("enable_prime_discount_offers must be a boolean")
         self.enable_prime_discount_offers = enable_prime_discount_offers
 
-    def clamp_whole_dollar(self, raw_price, low=None, high=None):
-        raw_price = number(raw_price, "price")
-        lower = math.ceil(max(self.min_whole_price, number(low, "lower bound")
-                              if low is not None else self.min_whole_price))
-        upper = math.floor(min(self.max_price_cap, number(high, "upper bound")
-                               if high is not None else self.max_price_cap))
+    def clamp_cents(self, raw_price, low=None, high=None):
+        number(raw_price, "price")
+        lower = Decimal(str(max(self.min_whole_price, number(low, "lower bound")
+                                if low is not None else self.min_whole_price))).quantize(CENT, rounding=ROUND_CEILING)
+        upper = Decimal(str(min(self.max_price_cap, number(high, "upper bound")
+                                 if high is not None else self.max_price_cap))).quantize(CENT, rounding=ROUND_FLOOR)
         if lower > upper:
-            raise ValueError("No whole-dollar price satisfies the requested bounds")
-        return float(max(lower, min(upper, math.floor(raw_price + 0.5))))
+            raise ValueError("No cent price satisfies the requested bounds")
+        bounded = max(lower, min(upper, Decimal(str(raw_price))))
+        return float(bounded.quantize(CENT, rounding=ROUND_HALF_UP))
+
+    def clamp_whole_dollar(self, raw_price, low=None, high=None):
+        """Compatibility alias; prices are now calculated in cents."""
+        return self.clamp_cents(raw_price, low=low, high=high)
 
     def _validate_skus(self, skus):
         if set(skus) != set(SKU_IDS):
@@ -248,7 +268,7 @@ class DualMarketPricingEngine:
             count(sku.inventory_virtual, f"{sku_id} virtual stock")
             count(sku.inventory_physical, f"{sku_id} physical stock")
             number(sku.recent_sales_velocity, f"{sku_id} velocity")
-            number(sku.fixed_price_baseline, f"{sku_id} baseline", 1)
+            cent_price(sku.fixed_price_baseline, f"{sku_id} baseline", UNIT_WHOLESALE_COST)
             if number(sku.wholesale_cost, f"{sku_id} cost") > self.max_price_cap:
                 raise ValueError(f"{sku_id} cost exceeds the price cap")
 
@@ -263,7 +283,8 @@ class DualMarketPricingEngine:
                   and not isinstance(offer.unit_price, bool)
                   and isinstance(offer.unit_price, (int, float))
                   and math.isfinite(offer.unit_price)
-                  and UNIT_WHOLESALE_COST <= offer.unit_price <= self.max_price_cap]
+                  and UNIT_WHOLESALE_COST <= offer.unit_price <= self.max_price_cap
+                  and Decimal(str(offer.unit_price)) == Decimal(str(offer.unit_price)).quantize(CENT)]
         return min(viable) if viable else None
 
     def compute_tier_prices(self, skus, competitor_offers, bot_belief,
@@ -282,20 +303,18 @@ class DualMarketPricingEngine:
         else:
             competitor = {key: self.get_effective_competitor_min_price(key, competitor_offers)
                           for key in SKU_IDS}
-            p_green = 1.0 if (belief.bargain_hunter_share >= 0.4 or (
-                competitor["SKU_GREEN"] is not None and competitor["SKU_GREEN"] <= 1.5
-                and green.recent_sales_velocity < green.inventory_virtual / rounds_remaining)) else 2.0
-            p_gold = 4.0 if (belief.collector_share < 0.15
-                and competitor["SKU_GOLD"] is not None and competitor["SKU_GOLD"] <= 4
-                and gold.recent_sales_velocity < gold.inventory_virtual / rounds_remaining
-                and gold.inventory_virtual > 4) else 5.0
+            p_green = 1.0 if belief.bargain_hunter_share >= 0.4 else 2.0
+            p_gold = 5.0
             p_silver = 3.0
             if belief.convenience_shopper_share >= 0.35 and silver.inventory_virtual <= 4 and p_gold == 5:
                 p_silver = 4.0
-            elif competitor["SKU_SILVER"] is not None and competitor["SKU_SILVER"] <= 2 and p_green == 1:
-                p_silver = 2.0
             raw = [p_green, p_silver, p_gold]
-        return {key: self.clamp_whole_dollar(price, low=skus[key].wholesale_cost)
+            # Undercut comparable available offers by one cent when our baseline is higher.
+            for index, key in enumerate(SKU_IDS):
+                if competitor[key] is not None:
+                    target = Decimal(str(competitor[key])) - CENT
+                    raw[index] = float(min(Decimal(str(raw[index])), target))
+        return {key: self.clamp_cents(price, low=skus[key].wholesale_cost)
                 for key, price in zip(SKU_IDS, raw)}
 
     def compute_optimal_ad_bid(self, tier_prices, bot_belief,
@@ -335,7 +354,7 @@ class DualMarketPricingEngine:
         recommended = {f"BASE_{key}": value for key, value in tiers.items()}
         recommended["OFFER_CHARITY_MYSTERY_POUCH"] = tiers["SKU_SILVER"]
         if self.enable_prime_discount_offers:
-            recommended.update({f"PRIME_{key}": self.clamp_whole_dollar(
+            recommended.update({f"PRIME_{key}": self.clamp_cents(
                 tiers[key] - 1, low=skus[key].wholesale_cost, high=tiers[key])
                 for key in SKU_IDS[1:]})
         submitted = dict(recommended)
@@ -346,16 +365,16 @@ class DualMarketPricingEngine:
             if not isinstance(override, (list, tuple)) or len(override) != 2:
                 raise ValueError("Each override requires [price, reason]")
             price, reason = override
-            price = number(price, "override price", self.min_whole_price)
-            if not price.is_integer() or price > self.max_price_cap or not isinstance(reason, str) or not reason.strip():
-                raise ValueError("Overrides need a valid whole-dollar price and a written reason")
+            price = cent_price(price, "override price", self.min_whole_price)
+            if price > self.max_price_cap or not isinstance(reason, str) or not reason.strip():
+                raise ValueError("Overrides need a valid cent price and a written reason")
             submitted[offer_id] = price
         if "OFFER_CHARITY_MYSTERY_POUCH" not in overrides:
             submitted["OFFER_CHARITY_MYSTERY_POUCH"] = submitted["BASE_SKU_SILVER"]
         for key in SKU_IDS[1:]:
             prime_id = f"PRIME_{key}"
             if prime_id in submitted and prime_id not in overrides:
-                submitted[prime_id] = self.clamp_whole_dollar(
+                submitted[prime_id] = self.clamp_cents(
                     submitted[f"BASE_{key}"] - 1, low=skus[key].wholesale_cost,
                     high=submitted[f"BASE_{key}"])
             if prime_id in submitted and submitted[prime_id] > submitted[f"BASE_{key}"]:
@@ -376,7 +395,7 @@ class DualMarketPricingEngine:
                 terms = "SOLDIER_PRIME_MEMBERS_GET_TWO_POUCH_PEEK_SELECTION" if self.enable_prime_discount_offers else "NONE"
             elif is_prime:
                 eligibility = "RETURNING_CUSTOMER_SOLDIER_PRIME_MEMBER_ONE_ITEM_LIMIT"
-                discount = submitted[f"BASE_{sku_id}"] - price
+                discount = round(submitted[f"BASE_{sku_id}"] - price, 2)
                 terms = f"SELLER_FUNDED_{discount:g}_DOLLAR_DISCOUNT_INCLUDED_IN_PRICE_NO_EXPIRATION"
             offers.append(MarketOffer(offer_id, {sku_id: 1}, price,
                 0 if is_pouch else skus[sku_id].inventory_virtual,

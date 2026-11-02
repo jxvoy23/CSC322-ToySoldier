@@ -179,7 +179,7 @@ class SellerPipelineTests(unittest.TestCase):
         catalog = json.loads((self.root / "public/published_price_file.json").read_text())
         audit = json.loads((self.root / "data/decision_audit_log.json").read_text())[-1]
         green = next(row for row in catalog if row["offer_id"] == "BASE_SKU_GREEN")
-        self.assertEqual((green["total_price"], green["virtual_available"]), (1, 27))
+        self.assertEqual((green["total_price"], green["virtual_available"]), (1.49, 27))
         self.assertEqual(len(audit["competitor_snapshot"]), 5)
         self.assertIn("availability_sha256", audit["competitor_sources"][1])
 
