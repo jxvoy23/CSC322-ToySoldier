@@ -1,9 +1,37 @@
 {
   "interval_seconds": 1800,
+  "buyer_poll_seconds": 60,
   "request_timeout_seconds": 15,
   "buyer_results": {
-    "type": "file",
-    "path": "data/buyer_results.json"
+    "type": "json_firestore",
+    "json": {
+      "type": "file",
+      "path": "data/buyer_results.json"
+    }
   },
-  "competitors": []
+  "competitors": [
+    {
+      "seller_id": "Pocket Soldier",
+      "url": "https://neon-palmier-f0739a.netlify.app/prices.json",
+      "format": "pocket_soldier",
+      "offer_ids": {"SKU_GREEN": "PP-SINGLE-001"}
+    },
+    {
+      "seller_id": "Frieds Fort Troopers",
+      "url": "https://troopers.fjb.chatgpt.site/api/catalog",
+      "availability_url": "https://troopers.fjb.chatgpt.site/prices",
+      "format": "troopers_catalog",
+      "offer_ids": {
+        "SKU_GREEN": "basic-1",
+        "SKU_SILVER": "personalized-1",
+        "SKU_GOLD": "limited-1"
+      }
+    },
+    {
+      "seller_id": "Toy Soldier Stand",
+      "url": "https://toy-soliders.jarbencer.com/prices.json",
+      "format": "toy_soldier_stand",
+      "offer_ids": {"SKU_GREEN": "GREEN-1"}
+    }
+  ]
 }

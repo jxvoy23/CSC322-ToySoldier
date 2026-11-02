@@ -242,6 +242,9 @@ def parse_html(document, source):
 
 
 def collect_competitors(sources, own_names, timeout):
+    from automation.seller_adapters import (
+        parse_pocket_soldier, parse_toy_soldier_stand, parse_troopers,
+    )
     if not isinstance(sources, list) or not sources:
         raise ValueError("Add at least one real competitor in config/automation.json")
     own_aliases = {canonical_seller(name) for name in own_names}
@@ -258,18 +261,42 @@ def collect_competitors(sources, own_names, timeout):
             raise ValueError("Competitor seller IDs must be unique and different from our seller")
         seen.add(key)
         content = fetch_url(url, timeout)
+        availability_content = None
+        upstream_snapshot = None
         try:
             text = content.decode("utf-8-sig")
             if source.get("format") == "price_file":
                 offers = parse_price_file(json.loads(text), source)
             elif source.get("format") == "html":
                 offers = parse_html(text, source)
+            elif source.get("format") == "pocket_soldier":
+                offers = parse_pocket_soldier(json.loads(text), source)
+            elif source.get("format") == "toy_soldier_stand":
+                offers = parse_toy_soldier_stand(json.loads(text), source)
+            elif source.get("format") == "troopers_catalog":
+                availability_url = source.get("availability_url")
+                if not isinstance(availability_url, str):
+                    raise ValueError("Troopers needs its public availability page URL")
+                availability_content = fetch_url(availability_url, timeout)
+                document = json.loads(text)
+                offers = parse_troopers(document, availability_content.decode("utf-8-sig"), source)
+                upstream_snapshot = document["price_snapshot_id"]
             else:
-                raise ValueError("Competitor format must be price_file or html")
+                raise ValueError("Unknown competitor source format")
         except (UnicodeError, json.JSONDecodeError) as error:
             raise ValueError(f"Could not read competitor source for {seller}") from error
         results.extend(offers)
         parsed = urllib.parse.urlsplit(url)
-        metadata.append({"seller_id": seller, "url": urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", "")),
-                         "checked_at": utc_now(), "sha256": hashlib.sha256(content).hexdigest()})
+        detail = {"seller_id": seller, "url": urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", "")),
+                  "checked_at": utc_now(), "sha256": hashlib.sha256(content).hexdigest()}
+        if source.get("offer_ids") is not None:
+            detail["mapped_offer_ids"] = source["offer_ids"]
+        if upstream_snapshot is not None:
+            detail["price_snapshot_id"] = upstream_snapshot
+        if availability_content is not None:
+            parsed_availability = urllib.parse.urlsplit(source["availability_url"])
+            detail["availability_url"] = urllib.parse.urlunsplit(
+                (parsed_availability.scheme, parsed_availability.netloc, parsed_availability.path, "", ""))
+            detail["availability_sha256"] = hashlib.sha256(availability_content).hexdigest()
+        metadata.append(detail)
     return results, metadata

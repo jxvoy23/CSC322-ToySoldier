@@ -54,6 +54,11 @@
   }
 
   function render() {
+    const buyerStockUnsynced = [...offers.values()].some(offer =>
+      offer.simulated_stock_status !== 'buyer_report');
+    text('inventoryStatus', buyerStockUnsynced
+      ? 'Simulated stock is the last recorded Firebase count and is not synchronized with buyer sales.'
+      : offers.size ? 'Simulated stock reflects the latest imported buyer report and may lag new sales.' : '');
     for (const product of PRODUCTS.slice(0, 4)) {
       const id = activeId(product.id);
       const offer = offers.get(id);
@@ -65,7 +70,8 @@
       text('virt-' + product.id, product.sku === 'SKU_MYSTERY_POUCH'
         ? 'Simulated Virtual Stock: 0 (In-Person Only)'
         : 'Simulated Virtual Stock: ' + (offer
-          ? offer.virtual_available + ' units' + (verified ? '' : ' (last known)')
+          ? offer.virtual_available + ' units' + (offer.simulated_stock_status !== 'buyer_report'
+            ? ' (not synced to buyer sales)' : verified ? '' : ' (last known)')
           : verified ? 'Offer unavailable' : 'Not verified'));
       const button = buttons.get(product.id);
       if (button) {

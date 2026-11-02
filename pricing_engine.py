@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent
 UNIT_WHOLESALE_COST = 0.25
@@ -120,7 +120,9 @@ class CompetitorOffer:
     seller_id: str
     sku_id: str
     unit_price: float
-    virtual_available: int
+    virtual_available: Optional[int]
+    # Unknown stock must never be converted to a made-up numeric quantity.
+    availability_status: str = "known"
 
 
 @dataclass
@@ -253,8 +255,11 @@ class DualMarketPricingEngine:
     def get_effective_competitor_min_price(self, sku_id, competitor_offers):
         viable = [offer.unit_price for offer in competitor_offers
                   if offer.sku_id == sku_id
-                  and type(offer.virtual_available) is int
-                  and offer.virtual_available > self.stockout_squeeze_threshold
+                  and ((offer.availability_status == "known"
+                        and type(offer.virtual_available) is int
+                        and offer.virtual_available > self.stockout_squeeze_threshold)
+                       or (offer.availability_status == "seller_claimed_unlimited"
+                           and offer.virtual_available is None))
                   and not isinstance(offer.unit_price, bool)
                   and isinstance(offer.unit_price, (int, float))
                   and math.isfinite(offer.unit_price)
@@ -451,7 +456,10 @@ def load_market_config(path=ROOT / "market_config.json"):
         if not isinstance(offer.seller_id, str) or not offer.seller_id.strip() or offer.sku_id not in SKU_IDS:
             raise ValueError("Competitor offers need a seller identifier and a recognized SKU")
         number(offer.unit_price, "competitor price", 0.01)
-        count(offer.virtual_available, "competitor stock")
+        if offer.availability_status == "known":
+            count(offer.virtual_available, "competitor stock")
+        elif offer.availability_status not in ("unknown", "seller_claimed_unlimited") or offer.virtual_available is not None:
+            raise ValueError("Invalid competitor availability status or stock")
     belief = BotPopulationBelief(**config.get("bot_belief", {})).normalized()
     engine = DualMarketPricingEngine(enable_prime_discount_offers=config.get("enable_prime_discount_offers", True))
     engine._validate_skus(skus)

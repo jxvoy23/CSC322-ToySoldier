@@ -6,7 +6,26 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "rewrites": [
+      {
+        "source": "/api/catalog",
+        "destination": "/published_price_file.json"
+      }
+    ],
     "headers": [
+      {
+        "source": "/api/catalog",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          },
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          }
+        ]
+      },
       {
         "source": "**",
         "headers": [

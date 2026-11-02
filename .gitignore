@@ -63,3 +63,5 @@ replays/
 
 # Buyer results, market snapshots, and detailed local decision records
 data/
+
+serviceAccountKey.json
