@@ -2,30 +2,40 @@
 
 Vanguard Garrison is a seller team in the CSC322 computational game theory market. Our project combines a public toy soldier storefront, a downloadable price file for the buyer team, and a Python pricing tool that responds to buyer results and competing sellers.
 
-- [Storefront preview](https://toy-soldier-9bf43--optimized-code-ri6rr5p1.web.app/)
-- [Download the preview price file](https://toy-soldier-9bf43--optimized-code-ri6rr5p1.web.app/published_price_file.json)
-- [Download the preview price history](https://toy-soldier-9bf43--optimized-code-ri6rr5p1.web.app/decision_audit_log.json)
-
-The links above are for a Firebase Hosting **preview**, which can expire. The current live site is a separate deployment. Confirm the active link with the team before sharing it as the official storefront.
+- [Live storefront](https://toy-soldier-9bf43.web.app/)
+- [Published price file](https://toy-soldier-9bf43.web.app/published_price_file.json)
+- [Buyer catalog endpoint](https://toy-soldier-9bf43.web.app/api/catalog)
+- [Published price history](https://toy-soldier-9bf43.web.app/decision_audit_log.json)
 
 ## Project status
 
-The `optimized-code` branch publishes a JSON price file for buyers and reads our inventory from Firebase when preparing the live catalog or running the buyer-results watcher. Competitor prices are collected from the other sellers; the previous buyer ping client and listener are not required.
+The storefront on `main` reads a published static JSON catalog. `/api/catalog` serves the same catalog through a public, read-only Firebase Hosting rewrite. It does not accept purchases: the buyer team must record purchases in its own ledger.
 
-After deploying this version, buyers can also read the same price file at `/api/catalog`. It is a public, read-only Hosting rewrite, not a purchase endpoint. The existing `/published_price_file.json` URL remains available. Recording purchases still requires the buyer team's official ledger; do not point buyers to a nonexistent `POST /api/purchases` on our site.
+Three competitor feeds are configured. The Python tools can scan them, recommend prices, import compatible buyer results, and optionally deploy a new catalog. Firebase Hosting only serves the files; it does not start or schedule the Python process. The older buyer ping client and listener are not required.
 
-The three competitor feeds are configured. A scan-only process can check them every 30 minutes without changing prices. `--prices-only` can reprice using the last Firebase counts and marks simulated stock as not synchronized; it never deducts buyer sales. The full pricing watcher imports new sales from an official buyer ledger. Firebase Hosting serves static files; it does not start either Python process.
+**Inventory status:** Prices-only mode uses the last recorded Firebase stock without deducting buyer sales. Offers from that mode are marked `simulated_stock_status: "not_synchronized"`. Check the live catalog's status and reconcile it against an authoritative buyer ledger before relying on its simulated counts. A recent price timestamp does not verify the stock.
 
-The older live storefront reads Firestore directly. The optimized storefront reads its published static JSON catalog. Deploying this branch replaces the live Hosting `public/` folder. `python3 -m automation.prepare_live` first reads the current public Firestore state into that catalog without changing the database.
+The Firebase-backed watcher uses current Firestore inventory rather than resetting it from `market_config.json`. Before importing buyer results, reconcile which transactions have already been included and confirm the round, remaining rounds, and simulated Prime eligibility with the instructor and buyer team.
 
-The existing Firebase virtual inventory is the starting stock. The watcher reads the current Firebase counts rather than resetting them from `market_config.json`. Before importing buyer results, reconcile which transactions have already been included and confirm the round, remaining rounds, and simulated Prime eligibility with the instructor and buyer team.
+## Choose an automation mode
+
+Run commands from the project root. Setup and full examples are below.
+
+| Mode | What it does | Buyer results needed? | Firebase effect |
+| --- | --- | --- | --- |
+| Local preview | Serves the files currently in `public/` on your computer. | No | None. |
+| `--scan-only` | Checks competitor feeds without repricing or deploying. | No | None. |
+| `--prices-only` | Generates prices using the last recorded Firebase stock; marks simulated stock as unsynchronized. | No | Reads Firestore; does not deduct sales. |
+| Full watcher | Imports new buyer transactions, updates inventory, and generates a catalog. | Yes; reconcile and initialize the baseline first. | Writes buyer transactions and stock to Firestore. |
+
+Add `--watch` to keep a process running. The default competitor interval is 30 minutes; the full watcher also checks for changed buyer results every 60 seconds. Catalog files remain local unless a deployment option is supplied. **A full watcher can update Firestore even when the Hosting target is local or a preview.**
 
 ## How the market works
 
 1. **We publish offers.** The storefront and downloadable JSON show product identifiers, prices, eligibility, timestamps, and separate physical and virtual availability.
-2. **The buyer team takes a snapshot.** At the instructor's daily cutoff, buyers save the published offers and use that snapshot for the simulated round. Later price changes apply to a future simulated round and do not change accepted purchases.
-3. **We reconcile results.** The buyer team's ledger is authoritative for remaining virtual stock. Physical sales and cash are tracked separately.
-4. **We check the market.** Our local automation reads the buyer's report, checks configured competitor sources, and uses those inputs to generate a catalog and decision record.
+2. **The buyer team takes a snapshot.** At the cutoff agreed with the instructor, buyers save the published offers and use that snapshot for the simulated round. Later price changes do not change accepted purchases.
+3. **We reconcile results.** Confirm the authoritative virtual-sales ledger with the buyer team. Physical sales and cash are tracked separately.
+4. **We check the market.** The automation checks configured competitors and, when configured for a full cycle, reads the buyer's report to generate a catalog and decision record.
 5. **We publish updates.** When explicitly configured to deploy, the process sends a successful catalog update to a Firebase Hosting preview or live site.
 
 A price check does not necessarily change a price. The dynamic strategy is a heuristic using inventory, costs, buyer preference estimates, and available competitor offers. Sales-velocity values remain in the configuration but are not currently used to set prices or automatically derived from the buyer ledger. It is not a claim that we have found a market equilibrium.
@@ -34,7 +44,7 @@ A price check does not necessarily change a price. The dynamic strategy is a heu
 
 The buyer team can download [our live offers](https://toy-soldier-9bf43.web.app/published_price_file.json). The preview channel is separate and may expire.
 
-Each offer has a stable `offer_id`, `product_quantities`, `total_price`, `eligibility`, `loyalty_program_terms`, `timestamp`, `virtual_available`, and `physical_available`. The buyer team should save the full file at the announced cutoff and use the agreed common format and market rules.
+Each offer has a stable `offer_id`, `product_quantities`, `total_price`, `eligibility`, `loyalty_program_terms`, `timestamp`, `virtual_available`, and `physical_available`. `simulated_stock_status` indicates whether the counts were generated from a buyer report or are not synchronized; it cannot confirm that every sale has been delivered to the watcher. The buyer team should save the full file at the announced cutoff and use the agreed common format and market rules.
 
 - Standard and Prime Silver offers share the same `SKU_SILVER` stock. Standard and Prime Gold offers share the same `SKU_GOLD` stock.
 - Prime prices already include the published discount. Simulated Prime eligibility requires buyer-team support and instructor approval.
@@ -47,7 +57,7 @@ Prices are in whole cents. The default minimum is the assigned $0.25 unit cost a
 
 | Path | Purpose |
 | --- | --- |
-| [`public/index.html`](public/index.html), [`public/app.js`](public/app.js) | Storefront, catalog display, and pickup request. |
+| [`public/index.html`](public/index.html), [`public/app.js`](public/app.js) | Storefront and catalog display; pickup controls are currently hidden. |
 | [`public/published_price_file.json`](public/published_price_file.json) | Downloadable offers used by the storefront and buyer team. |
 | [`public/decision_audit_log.json`](public/decision_audit_log.json) | Public price and eligibility history prepared for publication. |
 | [`market_config.json`](market_config.json) | Round, inventory, strategy, preference estimates, and manual overrides. |
@@ -55,7 +65,7 @@ Prices are in whole cents. The default minimum is the assigned $0.25 unit cost a
 | [`automation/sources.py`](automation/sources.py) | Reads buyer reports and extracts configured competitor offers. |
 | [`automation/seller_adapters.py`](automation/seller_adapters.py) | Validates and translates the three sellers' different feed formats. |
 | [`automation/firebase_inventory.py`](automation/firebase_inventory.py) | Validates buyer sales and updates Firebase stock atomically and idempotently. |
-| [`automation/prepare_live.py`](automation/prepare_live.py) | Copies the existing publicly readable Firebase inventory into the local Hosting catalog. |
+| [`automation/prepare_live.py`](automation/prepare_live.py) | Rebuilds the local catalog from publicly readable Firestore prices and inventory; see the cautions below. |
 | [`automation/run.py`](automation/run.py) | Runs the pricing cycle and optionally deploys through the Firebase CLI. |
 | [`pricing_engine.py`](pricing_engine.py) | Pricing recommendations, offer generation, decision records, and replay inputs. |
 | [`examples/`](examples/) | Illustrative source settings and a proposed buyer report. Example URLs, transactions, and quantities are not official. |
@@ -65,7 +75,16 @@ Prices are in whole cents. The default minimum is the assigned $0.25 unit cost a
 
 ## Requirements and local preview
 
-The Python tools require Python 3.10 or newer. Competitor scans and local catalog preparation use the standard library. The Firebase buyer-results watcher also needs `firebase-admin` from `requirements.txt` and a service account or Google application-default credentials with Firestore access. Hosting deployments use Node.js and `npx -y firebase-tools@latest`; its login is separate from the Python credentials.
+The Python tools require Python 3.10 or newer. Competitor scans and local catalog preparation use the standard library. **Both Firebase-backed pricing modes** need `firebase-admin` from `requirements.txt` and a service account or Google application-default credentials with Firestore access. Hosting deployments use Node.js and `npx -y firebase-tools@latest`; its login is separate from the Python credentials.
+
+Clone the repository and enter the project folder:
+
+```bash
+git clone https://github.com/jxvoy23/CSC322-ToySoldier.git
+cd CSC322-ToySoldier
+```
+
+The examples below use `python3` on macOS or Linux. On Windows, use `py -3` in its place; for example, `py -3 -m http.server 8000 --directory public`.
 
 From the project root, run:
 
@@ -77,7 +96,7 @@ Open [http://localhost:8000](http://localhost:8000). Press `Ctrl+C` to stop the 
 
 ## Buyer JSON and Firebase inventory
 
-The Brigade Exchange page has an **Export DB JSON** action. Its browser ledger objects contain `_id`, `sellerName`, `offerId`, `unitsBought`, `isoTimestamp`, and `status`, which this watcher can read. A site's own browser state is not automatically the shared official ledger: the current page creates sample trades on load, and the full JSON export also includes private buyer profiles. Ask the buyer team to provide an authoritative, seller-filtered JSON endpoint or file and confirm IDs remain stable across exports. The `localhost:5000` bridge in their page addresses the browser visitor's own machine; it is not a public endpoint for our server.
+The importer supports buyer ledger records with fields such as `_id`, `sellerName`, `offerId`, `unitsBought`, `isoTimestamp`, and `status`. A site's browser state or test export is not automatically the shared official ledger. A previously inspected Brigade Exchange export contained sample trades and buyer profiles; confirm the current export with the buyer team instead of assuming it is suitable. Request an authoritative, seller-filtered JSON endpoint or file and confirm transaction IDs remain stable across exports. A `localhost` address refers to the visitor's own machine, not a public endpoint for this watcher.
 
 The default input is `data/buyer_results.json`. When the buyer sends an official seller-filtered file, replace that file with the new version. If they publish a direct endpoint, change the `json` source to `{"type":"url","url":"https://..."}`. Do not use their Google Sites page URL as the JSON endpoint. When the watcher is running it checks the selected file or URL for changes every 60 seconds.
 
@@ -98,16 +117,16 @@ The URL above is a placeholder, not an existing buyer endpoint. Omit `bearer_tok
 
 The importer processes `PURCHASED` entries for our seller only. It stores processed event hashes in Firestore and atomically subtracts each new sale once; re-reading the same event will not subtract it again. Standard and Prime offers share inventory. It does not deduct simulated purchases from physical stock, allow negative inventory, or publish the buyer report and profiles. Seller names and offer IDs must match our configured aliases and published catalog.
 
-The buyer's current CSV export omits purchased quantity and a reliably unique event ID. If the team later supplies a compatible CSV, use `csv_firestore`; [`examples/buyer_seller_csv_export.js`](examples/buyer_seller_csv_export.js) illustrates the additional fields. Do not infer units from the total or use the unmodified CSV to reduce stock.
+A previously inspected buyer CSV export omitted purchased quantity and a reliably unique event ID. If the team supplies a compatible CSV, use `csv_firestore`; [`examples/buyer_seller_csv_export.js`](examples/buyer_seller_csv_export.js) illustrates the required fields. Do not infer units from the total or import an export that lacks them.
 
 Before processing the first CSV or JSON report, reconcile Firebase's current stock with the buyer ledger and initialize the baseline **once**:
 
 - If there are no existing sales in the first report and future exports contain only new sales, run `python3 -m automation.run --initialize-buyer-baseline empty`.
 - If the current Firebase inventory already includes all sales in an existing, compatible report, configure that report and run `python3 -m automation.run --initialize-buyer-baseline existing`. Those rows are marked as already counted, without changing stock.
 
-Never select either option until the team knows which transactions Firebase already includes. Existing Firestore counts are preserved at initialization. The full watcher stops if buyer results are missing; it cannot detect sales that have not been delivered. Keep the original buyer reports privately for reconciliation.
+Never select either option until the team knows which transactions Firebase already includes. Initialization writes a baseline and event markers to Firestore but preserves its current inventory counts. The full watcher stops if buyer results are missing; it cannot detect sales that have not been delivered. Keep the original buyer reports privately for reconciliation.
 
-The buyer page describes 15 overlapping two-hour windows from 5:00 AM to 5:00 AM using the viewer's local clock. However, its current page-load code generates all 15 sample trades immediately and its default seller URLs are placeholders. Those windows are not a verified publication schedule or instructor cutoff. The watcher checks sellers at least every 30 minutes and looks for changed buyer results every 60 seconds; changed results trigger another seller scan and pricing cycle. Ask the buyer team when it will release an authoritative ledger and have the instructor confirm the official cutoff.
+The buyer team must confirm when it will release authoritative results, and the instructor must confirm the official cutoff. The watcher checks sellers at least every 30 minutes and looks for changed buyer results every 60 seconds; changed results trigger another seller scan and pricing cycle.
 
 ## Configure competitor sources
 
@@ -121,14 +140,27 @@ The default file already lists the supplied competitors. The mapping below compa
 
 Mappings are in `config/automation.json`. The Troopers catalog does not itself provide an effective timestamp or numeric stock. Its current snapshot ID and the availability-page hash are retained in the private audit. All configured feeds must be readable and valid for a pricing cycle; an unexpected change stops the cycle instead of guessing.
 
-To keep a separate editable local configuration without overwriting an existing one:
+To keep a separate editable local configuration without overwriting an existing one, use the following on macOS or Linux:
 
 ```bash
 mkdir -p data
 test -e data/sources.json || cp config/automation.json data/sources.json
 ```
 
-Open `data/sources.json` in VS Code to adjust mappings or the buyer report's local path or direct URL. [`examples/automation.example.json`](examples/automation.example.json) also demonstrates the generic source formats; its URLs and IDs are placeholders.
+In Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+if (-not (Test-Path data/sources.json)) { Copy-Item config/automation.json data/sources.json }
+```
+
+Open `data/sources.json` in VS Code to adjust mappings or the buyer report's local path or direct URL. **The runner uses `config/automation.json` by default**; add `--sources data/sources.json` to each command that should use the copy, including baseline initialization. For example:
+
+```bash
+python3 -m automation.run --sources data/sources.json --scan-only
+```
+
+[`examples/automation.example.json`](examples/automation.example.json) also demonstrates the generic source formats; its URLs and IDs are placeholders.
 
 An older `data/sources.json` may still point to the previous JSON buyer report or have an empty seller list. Update that file explicitly or use the default `config/automation.json`; the copy command above deliberately does not overwrite it.
 
@@ -152,16 +184,6 @@ These commands need no buyer file and do not generate prices or deploy. They pri
 
 ## Run pricing and deploy
 
-To prepare the optimized site from the inventory and prices currently stored in the publicly readable Firebase state, then deploy the prepared folder to the **live** Firebase Hosting site:
-
-```bash
-python3 -m automation.prepare_live
-npx -y firebase-tools@latest login
-npx -y firebase-tools@latest deploy --only hosting --project toy-soldier-9bf43
-```
-
-Stop if preparation reports an error. The first command does not change Firestore or deploy. It preserves the Firebase state's last-updated timestamp and prepares the local catalog and public price history. The final command replaces the live Hosting files with this branch's `public/` folder. Check the live storefront and downloadable `published_price_file.json` afterwards. This one-time deploy does not start the pricing watcher.
-
 To run the Python watcher, install its dependency:
 
 ```bash
@@ -170,13 +192,33 @@ python3 -m pip install -r requirements.txt
 
 For the Python watcher, set `GOOGLE_APPLICATION_CREDENTIALS` to your service-account file, place `serviceAccountKey.json` in the project root, or configure application-default credentials. Keep keys out of Git and never place them in `public/`. The service account needs access to this Firebase project. Running Firebase CLI login does not by itself provide these Python credentials.
 
+For example, set the path for the current terminal session on macOS or Linux:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/serviceAccountKey.json"
+```
+
+In Windows PowerShell:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\serviceAccountKey.json"
+```
+
+Replace the example path with your own private key file. These environment variables apply to the current terminal session.
+
+If deploying with a watcher, authenticate the Firebase CLI separately:
+
+```bash
+npx -y firebase-tools@latest login
+```
+
 Without an official buyer feed, you may start a **prices-only** watcher:
 
 ```bash
 python3 -m automation.run --prices-only --watch --deploy-live
 ```
 
-It scans competitors and can publish changed prices every 30 minutes, using the last recorded Firebase inventory. It never reads buyer sales or automatically deducts stock. The site and price file mark simulated stock as not synchronized with the buyer team. Those counts can be stale, so reconcile them manually before relying on them for sales; a new price timestamp does not verify the inventory. This mode does not initialize the buyer baseline.
+It scans competitors and can publish changed prices every 30 minutes, using the last recorded Firebase inventory. It never reads buyer sales or automatically deducts stock. The site and price file mark simulated stock as not synchronized with the buyer team. Those counts can be stale, so reconcile them manually before relying on them for sales; a new price timestamp does not verify the inventory. This mode does not initialize the buyer baseline. Remove `--deploy-live` to prepare updates locally without publishing them.
 
 For full pricing and inventory updates, first obtain an official buyer report, reconcile Firebase stock, and initialize the buyer baseline. Prepare one update locally with `python3 -m automation.run`. To run immediately and then approximately every 30 minutes, deploying successful updates to the **live** Hosting site:
 
@@ -190,15 +232,35 @@ Or deploy successful updates to a preview channel:
 python3 -m automation.run --watch --deploy-preview optimized-code
 ```
 
+The preview channel name is just a Hosting channel, not a Git branch. **The full watcher still imports sales into the configured Firestore database when using a preview or no deployment flag.** For an isolated test, use a separate Firebase project and credentials, set its project ID in `market_config.json`, and provide a matching test inventory and buyer report.
+
 Keep the terminal process and computer running, awake, and online. Press `Ctrl+C` to stop it. The watcher checks for changed buyer results every minute and scans seller feeds at least every 30 minutes; the buyer page itself cannot push its exports to this computer. Each successful deployment publishes the entire `public/` folder. Run only one pricing process per checkout; a project lock prevents simultaneous writers. The static price file is the public price authority; legacy Firestore price fields are not automatically repriced by this watcher.
 
 Missing or invalid buyer results stop a full watcher cycle. An unavailable seller feed also skips the cycle. A failed deployment leaves a pending update in `data/automation_state.json`; retry with the **same deployment target**. If Firebase stock changed before a pending update is retried, the stale pending catalog is discarded and the next cycle rebuilds it. Firestore stock can change before a Hosting deployment finishes, so a failed deployment can leave the static storefront showing the previous stock until a successful retry. Monitor the logs and reconcile against the buyer ledger.
+
+### Prepare or deploy a catalog manually
+
+`automation.prepare_live` is intended for preparing a local catalog from the prices and inventory in the publicly readable Firestore state. It writes local catalog and audit files, labels simulated stock unsynchronized, and does not itself change Firestore or deploy:
+
+```bash
+python3 -m automation.prepare_live
+```
+
+**Do not run this as a routine step before every deployment.** The pricing watcher updates the static catalog, but does not update the old Firestore price fields. Preparing from Firestore can therefore replace newer local prices with older ones. Check and reconcile both prices and inventory before using it.
+
+To deploy a catalog you have already reviewed in `public/`, use:
+
+```bash
+npx -y firebase-tools@latest deploy --only hosting --project toy-soldier-9bf43
+```
+
+This replaces the live Hosting files with the entire local `public/` folder, which may differ from the current live site. Confirm the storefront and published price file afterwards. A one-time deployment does not start the watcher.
 
 ## Records and comparisons
 
 The local detailed audit at `data/decision_audit_log.json` records the inputs available for each decision, including buyer stock, competitor observations, recommendations, submitted prices, and override reasons. Record a manual override's reason before seeing that round's results. The public history records offer price or eligibility changes; its timestamp is when the catalog was prepared, not an independent server-confirmed deployment time.
 
-The historical root `decision_audit_log.json` and `pricing_engine.py` are tracked in this repository. If the repository is public, their contents are public on GitHub even though they are outside the Firebase `public/` folder. `data/` is ignored by Git and is not automatically backed up.
+The historical root `decision_audit_log.json` and `pricing_engine.py` are tracked in this public repository. Their contents are visible on GitHub even though they are outside the Firebase `public/` folder. `data/` is ignored by Git and is not automatically backed up.
 
 Generate candidate price files for comparing `dynamic_response`, `fixed_price`, and `fixed_markup`:
 
